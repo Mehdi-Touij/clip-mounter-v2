@@ -103,7 +103,7 @@ export async function listVideosNeedingTranscript(): Promise<VideoRow[]> {
 
 export async function listVideosNeedingDownload(): Promise<VideoRow[]> {
   const db = await getDb();
-  return db.prepare("SELECT * FROM videos WHERE storage_path = '' OR storage_path IS NULL").all() as VideoRow[];
+  return db.prepare("SELECT * FROM videos WHERE (storage_path = '' OR storage_path IS NULL) AND transcript_status != 'error'").all() as VideoRow[];
 }
 
 export async function updateVideoStorage(id: string, storagePath: string, duration: number): Promise<void> {

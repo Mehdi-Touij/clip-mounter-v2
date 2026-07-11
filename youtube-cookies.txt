@@ -1,0 +1,8 @@
+# YouTube cookie file for yt-dlp
+# How to get this file:
+# 1. Open YouTube in your browser
+# 2. Log in to your Google account
+# 3. Use a browser extension like "Get cookies.txt" to export cookies
+# 4. Save as /opt/data/clip-mounter-v2/youtube-cookies.txt
+# 
+# Alternatively, use --cookies-from-browser chrome/firefox on your local machine
