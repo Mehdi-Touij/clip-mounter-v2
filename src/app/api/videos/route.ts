@@ -39,20 +39,14 @@ export async function POST(req: NextRequest) {
     }
 
     const id = randomUUID();
-    const title = `YouTube ${ytId}`; // Will be updated by worker after download
+    const title = `YouTube ${ytId}`; // Replaced by the worker once metadata is fetched.
 
     await insertVideo({
       id,
       youtube_url: url,
       youtube_id: ytId,
       title,
-      channel: "",
-      duration: 0,
       thumbnail_url: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
-      storage_path: "",
-      transcript: "",
-      transcript_json: "",
-      transcript_status: "pending",
     });
 
     added.push({ id, youtube_id: ytId, title });

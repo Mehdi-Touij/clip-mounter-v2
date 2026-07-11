@@ -43,22 +43,32 @@ export async function POST(
 
   const userPrompt = `SCRIPT:\n${project.script}\n\nVIDEO LIBRARY (${readyVideos.length} videos):\n${libraryText}\n\nReturn a JSON object: {"segments": [{"videoId": "...", "trimStart": 0, "trimEnd": 10, "reason": "..."}]}`;
 
-  // Call LLM
-  const llmResp = await fetch(`${BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.7,
-    }),
-  });
+  // Call LLM (with a hard timeout so the request can't hang forever).
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 120_000);
+  let llmResp: Response;
+  try {
+    llmResp = await fetch(`${BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}) },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.3,
+      }),
+      signal: ac.signal,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: `LLM request failed: ${(e as Error).message}` }, { status: 502 });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!llmResp.ok) {
-    return NextResponse.json({ error: `LLM error: ${llmResp.status}` }, { status: 500 });
+    return NextResponse.json({ error: `LLM error: ${llmResp.status}` }, { status: 502 });
   }
 
   const llmData = await llmResp.json();
@@ -77,14 +87,26 @@ export async function POST(
     return NextResponse.json({ error: "Failed to parse LLM JSON" }, { status: 500 });
   }
 
-  const timeline: Timeline = {
-    fps: 30,
-    width: 1080,
-    height: 1920,
-    segments: parsed.segments ?? [],
-  };
+  // Validate + normalize the LLM's segments against the real library:
+  // drop unknown video ids, backfill youtubeUrl, and clamp times to duration.
+  const byId = new Map(readyVideos.map((v) => [v.id, v]));
+  const segments = (Array.isArray(parsed.segments) ? parsed.segments : [])
+    .map((s: { videoId?: string; trimStart?: number; trimEnd?: number | null; reason?: string }) => {
+      const v = s.videoId ? byId.get(s.videoId) : undefined;
+      if (!v) return null;
+      const dur = v.duration || Number.MAX_SAFE_INTEGER;
+      const start = Math.max(0, Math.min(Number(s.trimStart) || 0, dur));
+      let end = s.trimEnd === null || s.trimEnd === undefined ? null : Math.min(Number(s.trimEnd), dur);
+      if (end !== null && end <= start) end = null;
+      return { videoId: v.id, youtubeUrl: v.youtube_url, trimStart: start, trimEnd: end, reason: s.reason ?? "" };
+    })
+    .filter(Boolean);
 
+  if (segments.length === 0) {
+    return NextResponse.json({ error: "AI produced no usable segments. Try rephrasing the script." }, { status: 422 });
+  }
+
+  const timeline: Timeline = { fps: 30, width: 1080, height: 1920, segments };
   await updateProject(id, { timeline_json: JSON.stringify(timeline), status: "planned" });
-
   return NextResponse.json({ timeline });
 }

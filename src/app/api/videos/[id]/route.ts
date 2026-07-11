@@ -1,8 +1,9 @@
-// GET /api/videos/[id] — get video details
-// DELETE /api/videos/[id] — delete video
-// PATCH /api/videos/[id] — update video metadata (from VPS worker)
+// GET /api/videos/[id]    — video details
+// DELETE /api/videos/[id] — delete video + its downloaded file
 import { NextRequest, NextResponse } from "next/server";
-import { getVideo, deleteVideo, getDb } from "@/lib/db";
+import * as fs from "fs";
+import * as path from "path";
+import { getVideo, deleteVideo, PATHS } from "@/lib/db";
 
 export async function GET(
   _req: NextRequest,
@@ -19,24 +20,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const video = await getVideo(id);
   await deleteVideo(id);
-  return NextResponse.json({ ok: true });
-}
-
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const body = await req.json();
-  const db = await getDb();
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  for (const key of ["title", "channel", "duration", "thumbnail_url", "storage_path", "transcript", "transcript_json", "transcript_status"]) {
-    if (body[key] !== undefined) { updates.push(`${key} = ?`); values.push(body[key]); }
+  // Best-effort cleanup of the downloaded file.
+  if (video?.storage_path) {
+    try { fs.rmSync(path.join(PATHS.videosDir, path.basename(video.storage_path)), { force: true }); } catch {}
   }
-  if (updates.length === 0) return NextResponse.json({ ok: true });
-  values.push(id);
-  db.prepare(`UPDATE videos SET ${updates.join(", ")} WHERE id = ?`).run(...values);
   return NextResponse.json({ ok: true });
 }

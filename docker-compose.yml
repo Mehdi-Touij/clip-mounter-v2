@@ -1,0 +1,41 @@
+# Collapsed deployment: one app container (web + worker) behind Caddy.
+# Everything runs on the VPS. Data persists in ./data on the host.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/data
+      - PLANNER_BASE_URL=${PLANNER_BASE_URL:-https://ollama.com/v1}
+      - PLANNER_MODEL=${PLANNER_MODEL:-glm-5.2}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      # Optional tuning:
+      - MAX_ATTEMPTS=${MAX_ATTEMPTS:-4}
+      - YT_PLAYER_CLIENTS=${YT_PLAYER_CLIENTS:-default,web_safari,tv,android,ios}
+    volumes:
+      - ./data:/data
+      # Mount your real cookie jar here (recommended for reliable downloads).
+      - ./youtube-cookies.txt:/app/youtube-cookies.txt:ro
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Set SITE_ADDRESS=clips.yourdomain.com for automatic HTTPS.
+      # Leave unset to serve plain HTTP on :80 (IP access).
+      - SITE_ADDRESS=${SITE_ADDRESS::80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

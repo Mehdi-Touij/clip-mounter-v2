@@ -91,15 +91,27 @@ export default function ProjectDetailPage() {
       if (data.timeline) {
         setTimeline(data.timeline);
         setEditedSegments(data.timeline.segments);
+      } else {
+        alert(data.error ?? "Planning failed. Make sure videos are transcribed.");
       }
       fetchProject();
     } catch { alert("Planning failed. Make sure videos are transcribed."); }
     finally { setPlanning(false); }
   };
 
+  const enqueueRender = async (): Promise<boolean> => {
+    const res = await fetch(`/api/projects/${id}/render`, { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Could not start render.");
+      return false;
+    }
+    return true;
+  };
+
   const render = async () => {
     setRendering(true);
-    await fetch(`/api/projects/${id}/render`, { method: "POST" });
+    await enqueueRender();
     fetchProject();
     setRendering(false);
   };
@@ -114,8 +126,8 @@ export default function ProjectDetailPage() {
         body: JSON.stringify({ timeline: updated }),
       });
     }
-    await fetch(`/api/projects/${id}/render`, { method: "POST" });
-    setShowEditor(false);
+    const ok = await enqueueRender();
+    if (ok) setShowEditor(false);
     fetchProject();
     setSaving(false);
   };

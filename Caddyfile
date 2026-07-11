@@ -1,0 +1,8 @@
+# SITE_ADDRESS is injected from docker-compose:
+#   - a domain (clips.example.com) -> automatic HTTPS
+#   - ":80"                         -> plain HTTP on the VPS IP (default)
+{$SITE_ADDRESS} {
+	reverse_proxy app:3000
+	# Rendered MP4s can be a few MB; allow large streamed responses.
+	encode zstd gzip
+}

@@ -1,0 +1,9 @@
+node_modules
+.next
+data
+db
+videos
+outputs
+.git
+*.log
+.env.local

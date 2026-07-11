@@ -1,12 +1,9 @@
 node_modules/
 .next/
-db/*.db
-db/*.db-wal
-db/*.db-shm
-videos/*
-outputs/*
-!videos/.gitkeep
-!outputs/.gitkeep
-!db/.gitkeep
+# Runtime data (SQLite, downloaded videos, rendered outputs, temp) — persisted on the VPS volume.
+data/
 .env.local
 *.log
+
+# TS incremental build info
+*.tsbuildinfo
