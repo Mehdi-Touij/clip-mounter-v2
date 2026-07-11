@@ -20,11 +20,12 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build && chmod +x start.sh
 
-# Persistent data (SQLite + videos + outputs + tmp) lives on a mounted volume.
+# Persistent data (SQLite + videos + outputs + tmp) lives on a mounted volume
+# (docker-compose ./data:/data, or a Railway volume) — no Dockerfile VOLUME line,
+# Railway rejects it and it isn't needed for compose either.
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV DATA_DIR=/data
-VOLUME ["/data"]
 EXPOSE 3000
 
 CMD ["./start.sh"]
