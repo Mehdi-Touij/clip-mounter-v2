@@ -2,12 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Sparkles, Play, Download, Save, RotateCcw, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Play, Download, Save, RotateCcw, ArrowUp, ArrowDown, Trash2, Film } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/status-pill";
 
 interface Segment {
   videoId: string;
@@ -39,6 +38,16 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function statusPill(status: string) {
+  switch (status) {
+    case "done": return <StatusPill tone="green">Done</StatusPill>;
+    case "rendering": return <StatusPill tone="blue" pulse>Rendering</StatusPill>;
+    case "planned": return <StatusPill tone="violet">Ready to render</StatusPill>;
+    case "error": return <StatusPill tone="red">Error</StatusPill>;
+    default: return <StatusPill tone="muted">Draft</StatusPill>;
+  }
 }
 
 export default function ProjectDetailPage() {
@@ -133,7 +142,13 @@ export default function ProjectDetailPage() {
     setSaving(false);
   };
 
-  if (!project) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  if (!project) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const isBusy = project.status === "rendering";
   const isPlanned = project.status === "planned" || project.status === "rendering" || project.status === "done";
@@ -145,126 +160,142 @@ export default function ProjectDetailPage() {
   const moveDown = (i: number) => { if (i === editedSegments.length - 1) return; const n = [...editedSegments]; [n[i+1], n[i]] = [n[i], n[i+1]]; setEditedSegments(n); };
   const remove = (i: number) => setEditedSegments(editedSegments.filter((_, idx) => idx !== i));
 
+  const list = showEditor ? editedSegments : timeline?.segments ?? [];
+
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="mx-auto max-w-4xl">
-        <Link href="/projects" className="text-sm text-muted-foreground hover:text-foreground mb-4 inline-block">
-          <ArrowLeft className="inline h-4 w-4" /> All recreations
-        </Link>
+    <div className="mx-auto max-w-4xl px-5 py-8 md:px-10">
+      <Link href="/projects" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> All recreations
+      </Link>
 
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-bold">{project.name}</h1>
-          <Badge>{project.status}</Badge>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+          {sourceTitle && (
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Film className="h-3.5 w-3.5" /> Recreating <span className="font-medium text-foreground">{sourceTitle}</span>
+            </p>
+          )}
         </div>
-        {sourceTitle && <p className="text-sm text-muted-foreground mb-6">Recreating: <span className="font-medium text-foreground">{sourceTitle}</span></p>}
+        {statusPill(project.status)}
+      </div>
 
-        {project.error && (
-          <Card className="mb-6 border-destructive">
-            <CardContent className="p-4 text-sm text-destructive">
-              <p className="font-medium">Error</p><p className="mt-1">{project.error}</p>
-            </CardContent>
-          </Card>
-        )}
+      {project.error && (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm">
+          <p className="font-medium text-red-600 dark:text-red-400">Something went wrong</p>
+          <p className="mt-1 text-muted-foreground">{project.error}</p>
+        </div>
+      )}
 
-        <Card className="mb-6">
-          <CardContent className="p-4 space-y-3">
+      {/* Recreate panel */}
+      <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Sparkles className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Recreate with AI</p>
+            <p className="text-xs text-muted-foreground">Rewords the script (same meaning) and reshuffles scenes.</p>
+          </div>
+        </div>
+        <Textarea
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          placeholder="Optional style notes (e.g. 'punchier tone', 'keep the intro first')…"
+          rows={2}
+          className="mb-3"
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={recreate} disabled={recreating || isBusy}>
+            {recreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {recreating ? "Recreating…" : isPlanned ? "Recreate again" : "Recreate with AI"}
+          </Button>
+          {isPlanned && !showEditor && (
+            <Button variant="outline" onClick={render} disabled={rendering || isBusy}>
+              {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {rendering ? "Rendering…" : "Render video"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* New script / editor */}
+      {isPlanned && timeline && (
+        <div className="mb-6 rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-border p-4">
             <div>
-              <p className="text-sm font-medium mb-1">Recreate with AI</p>
-              <p className="text-xs text-muted-foreground mb-2">Rewords the script (same meaning) and reshuffles scenes into a fresh variant.</p>
-              <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)}
-                placeholder="Optional style notes (e.g. 'punchier tone', 'keep the intro first')…" rows={2} />
+              <p className="font-semibold">{showEditor ? "Edit scene order" : "New script"}</p>
+              <p className="text-xs text-muted-foreground">
+                {list.length} scenes · ~{formatTime(totalLen(list))} total
+              </p>
             </div>
             <div className="flex gap-2">
-              <Button onClick={recreate} disabled={recreating || isBusy} size="sm">
-                {recreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {recreating ? "Recreating…" : isPlanned ? "Recreate again" : "Recreate with AI"}
-              </Button>
-              {isPlanned && !showEditor && (
-                <Button onClick={render} disabled={rendering || isBusy} size="sm">
-                  {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  {rendering ? "Rendering…" : "Render Video"}
+              {!showEditor ? (
+                <Button variant="outline" size="sm" onClick={() => setShowEditor(true)}>
+                  <RotateCcw className="h-4 w-4" /> Edit scenes
                 </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => { setEditedSegments(timeline.segments); setShowEditor(false); }}>Cancel</Button>
+                  <Button size="sm" onClick={saveTimelineAndRender} disabled={saving || !segmentsChanged}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {saving ? "Saving…" : "Save & re-render"}
+                  </Button>
+                </>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {isPlanned && timeline && (
-          <Card className="mb-6">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">{showEditor ? "Edit scene order" : "New script"}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(showEditor ? editedSegments : timeline.segments).length} scenes · ~{formatTime(totalLen(showEditor ? editedSegments : timeline.segments))} total
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  {!showEditor && (
-                    <Button variant="outline" size="sm" onClick={() => setShowEditor(true)}>
-                      <RotateCcw className="h-4 w-4" /> Edit scenes
-                    </Button>
-                  )}
-                  {showEditor && (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => { setEditedSegments(timeline.segments); setShowEditor(false); }}>Cancel</Button>
-                      <Button size="sm" onClick={saveTimelineAndRender} disabled={saving || !segmentsChanged}>
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        {saving ? "Saving…" : "Save & Re-render"}
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {showEditor ? (
-                <div className="space-y-2">
-                  {editedSegments.map((seg, i) => (
-                    <div key={i} className="flex items-start gap-3 p-2 rounded border border-border">
-                      <div className="flex flex-col items-center pt-1">
-                        <button onClick={() => moveUp(i)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
-                        <span className="text-xs">{i+1}</span>
-                        <button onClick={() => moveDown(i)} disabled={i === editedSegments.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{seg.sceneTitle || `Scene ${i+1}`}</p>
-                        <p className="text-xs text-muted-foreground">{formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}</p>
-                        {seg.newText && <p className="text-xs mt-1 line-clamp-2">{seg.newText}</p>}
-                      </div>
-                      <button onClick={() => remove(i)} className="text-muted-foreground hover:text-destructive pt-1"><Trash2 className="h-4 w-4" /></button>
+          <div className="space-y-3 p-4">
+            {showEditor
+              ? editedSegments.map((seg, i) => (
+                  <div key={i} className="flex items-start gap-3 rounded-xl border border-border p-3">
+                    <div className="flex flex-col items-center gap-0.5 pt-0.5">
+                      <button onClick={() => moveUp(i)} disabled={i === 0} className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
+                      <span className="text-xs font-medium tabular-nums text-muted-foreground">{i + 1}</span>
+                      <button onClick={() => moveDown(i)} disabled={i === editedSegments.length - 1} className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {timeline.segments.map((seg, i) => (
-                    <div key={i} className="p-3 rounded border border-border">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium">{i+1}. {seg.sceneTitle || `Scene ${i+1}`}</p>
-                        <span className="text-xs text-muted-foreground shrink-0">{formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}</span>
+                        <p className="truncate text-sm font-medium">{seg.sceneTitle || `Scene ${i + 1}`}</p>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}</span>
                       </div>
-                      {seg.newText && <p className="text-sm mt-1">{seg.newText}</p>}
-                      {seg.originalText && <p className="text-xs text-muted-foreground mt-1 italic line-clamp-2">was: {seg.originalText}</p>}
+                      {seg.newText && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{seg.newText}</p>}
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                    <button onClick={() => remove(i)} className="pt-0.5 text-muted-foreground transition-colors hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                ))
+              : timeline.segments.map((seg, i) => (
+                  <div key={i} className="rounded-xl border border-border p-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">
+                        <span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-[11px] font-bold tabular-nums text-primary">{i + 1}</span>
+                        {seg.sceneTitle || `Scene ${i + 1}`}
+                      </p>
+                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                        {formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}
+                      </span>
+                    </div>
+                    {seg.newText && <p className="mt-2 text-sm leading-relaxed">{seg.newText}</p>}
+                    {seg.originalText && <p className="mt-1.5 line-clamp-2 text-xs italic text-muted-foreground/80">was: {seg.originalText}</p>}
+                  </div>
+                ))}
+          </div>
+        </div>
+      )}
 
-        {isDone && !showEditor && (
-          <Card>
-            <CardContent className="p-4 space-y-3">
-              <p className="font-medium">Recreated video</p>
-              <video src={`/api/projects/${id}/output`} controls className="w-full max-w-sm mx-auto rounded" />
-              <a href={`/api/projects/${id}/output`} download>
-                <Button variant="outline" size="sm"><Download className="h-4 w-4" /> Download MP4</Button>
-              </a>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      {/* Output */}
+      {isDone && !showEditor && (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <p className="mb-3 font-semibold">Recreated video</p>
+          <video src={`/api/projects/${id}/output`} controls className="mx-auto w-full max-w-[320px] rounded-xl border border-border" />
+          <div className="mt-4 flex justify-center">
+            <a href={`/api/projects/${id}/output`} download>
+              <Button variant="outline"><Download className="h-4 w-4" /> Download MP4</Button>
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
