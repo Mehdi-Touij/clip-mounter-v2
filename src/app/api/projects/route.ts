@@ -9,8 +9,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { name } = await req.json();
+  const { name, sourceVideoId } = await req.json();
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
-  const id = await insertProject(name);
+  if (!sourceVideoId) return NextResponse.json({ error: "Pick a source video to recreate" }, { status: 400 });
+  const id = await insertProject(name, sourceVideoId);
   return NextResponse.json({ id, name });
 }

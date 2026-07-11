@@ -10,7 +10,7 @@ export async function POST(
   const { id } = await params;
   const project = await getProject(id);
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!project.timeline_json) return NextResponse.json({ error: "No timeline — run Plan with AI first." }, { status: 400 });
+  if (!project.timeline_json) return NextResponse.json({ error: "Nothing to render — click Recreate with AI first." }, { status: 400 });
 
   // Don't queue a render that will fail: every referenced video must be downloaded.
   const timeline = JSON.parse(project.timeline_json) as Timeline;
