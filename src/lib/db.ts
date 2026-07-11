@@ -60,14 +60,15 @@ function initSchema(db: any) {
     );
 
     CREATE TABLE IF NOT EXISTS projects (
-      id            TEXT PRIMARY KEY,
-      name          TEXT NOT NULL,
-      script        TEXT DEFAULT '',
-      status        TEXT DEFAULT 'draft',
-      timeline_json TEXT,
-      output_path   TEXT,
-      error         TEXT,
-      created_at    TEXT DEFAULT (datetime('now'))
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      script          TEXT DEFAULT '',
+      source_video_id TEXT DEFAULT '',   -- the video this project recreates
+      status          TEXT DEFAULT 'draft',
+      timeline_json   TEXT,
+      output_path     TEXT,
+      error           TEXT,
+      created_at      TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS render_jobs (
@@ -98,6 +99,9 @@ function initSchema(db: any) {
   const jobCols = db.prepare("PRAGMA table_info(render_jobs)").all().map((c: { name: string }) => c.name);
   if (!jobCols.includes("attempts")) db.exec("ALTER TABLE render_jobs ADD COLUMN attempts INTEGER DEFAULT 0");
   if (!jobCols.includes("updated_at")) db.exec("ALTER TABLE render_jobs ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))");
+
+  const projCols = db.prepare("PRAGMA table_info(projects)").all().map((c: { name: string }) => c.name);
+  if (!projCols.includes("source_video_id")) db.exec("ALTER TABLE projects ADD COLUMN source_video_id TEXT DEFAULT ''");
 }
 
 // === Video operations ===
@@ -180,6 +184,7 @@ export interface ProjectRow {
   id: string;
   name: string;
   script: string;
+  source_video_id: string;
   status: string;
   timeline_json: string | null;
   output_path: string | null;
@@ -187,11 +192,11 @@ export interface ProjectRow {
   created_at: string;
 }
 
-export async function insertProject(name: string): Promise<string> {
+export async function insertProject(name: string, sourceVideoId = ""): Promise<string> {
   const db = await getDb();
   const { randomUUID } = await import("crypto");
   const id = randomUUID();
-  db.prepare("INSERT INTO projects (id, name) VALUES (?, ?)").run(id, name);
+  db.prepare("INSERT INTO projects (id, name, source_video_id) VALUES (?, ?, ?)").run(id, name, sourceVideoId);
   return id;
 }
 

@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Sparkles, Play, Download, Save, RotateCcw, ArrowUp, ArrowDown, Trash2, Plus, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Play, Download, Save, RotateCcw, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -14,7 +13,9 @@ interface Segment {
   videoId: string;
   trimStart: number;
   trimEnd: number | null;
-  reason?: string;
+  sceneTitle?: string;
+  newText?: string;
+  originalText?: string;
 }
 
 interface Timeline {
@@ -27,7 +28,7 @@ interface Timeline {
 interface Project {
   id: string;
   name: string;
-  script: string;
+  source_video_id: string;
   status: string;
   timeline_json: string | null;
   output_path: string | null;
@@ -43,10 +44,11 @@ function formatTime(seconds: number): string {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
-  const [script, setScript] = useState("");
+  const [sourceTitle, setSourceTitle] = useState<string>("");
+  const [instructions, setInstructions] = useState("");
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [editedSegments, setEditedSegments] = useState<Segment[]>([]);
-  const [planning, setPlanning] = useState(false);
+  const [recreating, setRecreating] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
@@ -56,47 +58,46 @@ export default function ProjectDetailPage() {
       const res = await fetch(`/api/projects/${id}`);
       const data = await res.json();
       setProject(data.project);
-      if (data.project && script === "" && data.project.script) setScript(data.project.script);
       if (data.project?.timeline_json) {
         const tl = JSON.parse(data.project.timeline_json) as Timeline;
         setTimeline(tl);
         setEditedSegments(tl.segments);
       }
+      if (data.project?.source_video_id) {
+        const vr = await fetch(`/api/videos/${data.project.source_video_id}`);
+        const vd = await vr.json();
+        if (vd.video) setSourceTitle(vd.video.title);
+      }
     } catch {}
-  }, [id, script]);
+  }, [id]);
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
 
   useEffect(() => {
-    if (project && (project.status === "planning" || project.status === "rendering")) {
+    if (project && project.status === "rendering") {
       const interval = setInterval(fetchProject, 4000);
       return () => clearInterval(interval);
     }
   }, [project?.status, fetchProject]);
 
-  const saveScript = async () => {
-    await fetch(`/api/projects/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script }),
-    });
-  };
-
-  const plan = async () => {
-    setPlanning(true);
-    await saveScript();
+  const recreate = async () => {
+    setRecreating(true);
     try {
-      const res = await fetch(`/api/projects/${id}/plan`, { method: "POST" });
+      const res = await fetch(`/api/projects/${id}/recreate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions }),
+      });
       const data = await res.json();
       if (data.timeline) {
         setTimeline(data.timeline);
         setEditedSegments(data.timeline.segments);
       } else {
-        alert(data.error ?? "Planning failed. Make sure videos are transcribed.");
+        alert(data.error ?? "Recreation failed.");
       }
       fetchProject();
-    } catch { alert("Planning failed. Make sure videos are transcribed."); }
-    finally { setPlanning(false); }
+    } catch { alert("Recreation failed."); }
+    finally { setRecreating(false); }
   };
 
   const enqueueRender = async (): Promise<boolean> => {
@@ -134,10 +135,11 @@ export default function ProjectDetailPage() {
 
   if (!project) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-6 w-6 animate-spin" /></div>;
 
-  const isBusy = project.status === "planning" || project.status === "rendering";
+  const isBusy = project.status === "rendering";
   const isPlanned = project.status === "planned" || project.status === "rendering" || project.status === "done";
   const isDone = project.status === "done" && project.output_path;
   const segmentsChanged = timeline && JSON.stringify(timeline.segments) !== JSON.stringify(editedSegments);
+  const totalLen = (segs: Segment[]) => segs.reduce((a, s) => a + (s.trimEnd !== null ? s.trimEnd - s.trimStart : 0), 0);
 
   const moveUp = (i: number) => { if (i === 0) return; const n = [...editedSegments]; [n[i-1], n[i]] = [n[i], n[i-1]]; setEditedSegments(n); };
   const moveDown = (i: number) => { if (i === editedSegments.length - 1) return; const n = [...editedSegments]; [n[i+1], n[i]] = [n[i], n[i+1]]; setEditedSegments(n); };
@@ -147,13 +149,14 @@ export default function ProjectDetailPage() {
     <div className="min-h-screen bg-background p-8">
       <div className="mx-auto max-w-4xl">
         <Link href="/projects" className="text-sm text-muted-foreground hover:text-foreground mb-4 inline-block">
-          <ArrowLeft className="inline h-4 w-4" /> All projects
+          <ArrowLeft className="inline h-4 w-4" /> All recreations
         </Link>
 
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-2">
           <h1 className="text-2xl font-bold">{project.name}</h1>
           <Badge>{project.status}</Badge>
         </div>
+        {sourceTitle && <p className="text-sm text-muted-foreground mb-6">Recreating: <span className="font-medium text-foreground">{sourceTitle}</span></p>}
 
         {project.error && (
           <Card className="mb-6 border-destructive">
@@ -166,15 +169,15 @@ export default function ProjectDetailPage() {
         <Card className="mb-6">
           <CardContent className="p-4 space-y-3">
             <div>
-              <Label htmlFor="script">Script / Prompt</Label>
-              <Textarea id="script" value={script} onChange={(e) => setScript(e.target.value)}
-                placeholder="Describe the video you want…" rows={6} />
+              <p className="text-sm font-medium mb-1">Recreate with AI</p>
+              <p className="text-xs text-muted-foreground mb-2">Rewords the script (same meaning) and reshuffles scenes into a fresh variant.</p>
+              <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)}
+                placeholder="Optional style notes (e.g. 'punchier tone', 'keep the intro first')…" rows={2} />
             </div>
             <div className="flex gap-2">
-              <Button onClick={saveScript} variant="outline" size="sm">Save</Button>
-              <Button onClick={plan} disabled={planning || isBusy || !script.trim()} size="sm">
-                {planning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {planning ? "Searching…" : "Plan with AI"}
+              <Button onClick={recreate} disabled={recreating || isBusy} size="sm">
+                {recreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {recreating ? "Recreating…" : isPlanned ? "Recreate again" : "Recreate with AI"}
               </Button>
               {isPlanned && !showEditor && (
                 <Button onClick={render} disabled={rendering || isBusy} size="sm">
@@ -190,11 +193,16 @@ export default function ProjectDetailPage() {
           <Card className="mb-6">
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="font-medium">{showEditor ? "Video Editor" : "Timeline"}</p>
+                <div>
+                  <p className="font-medium">{showEditor ? "Edit scene order" : "New script"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(showEditor ? editedSegments : timeline.segments).length} scenes · ~{formatTime(totalLen(showEditor ? editedSegments : timeline.segments))} total
+                  </p>
+                </div>
                 <div className="flex gap-2">
-                  {!showEditor && isDone && (
+                  {!showEditor && (
                     <Button variant="outline" size="sm" onClick={() => setShowEditor(true)}>
-                      <RotateCcw className="h-4 w-4" /> Edit Scenes
+                      <RotateCcw className="h-4 w-4" /> Edit scenes
                     </Button>
                   )}
                   {showEditor && (
@@ -212,37 +220,31 @@ export default function ProjectDetailPage() {
               {showEditor ? (
                 <div className="space-y-2">
                   {editedSegments.map((seg, i) => (
-                    <div key={i} className="flex items-center gap-3 p-2 rounded border border-border">
-                      <div className="flex flex-col">
+                    <div key={i} className="flex items-start gap-3 p-2 rounded border border-border">
+                      <div className="flex flex-col items-center pt-1">
                         <button onClick={() => moveUp(i)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
                         <span className="text-xs">{i+1}</span>
                         <button onClick={() => moveDown(i)} disabled={i === editedSegments.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm">{seg.videoId.slice(0,8)}…</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` - ${formatTime(seg.trimEnd)}` : " - end"}
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{seg.sceneTitle || `Scene ${i+1}`}</p>
+                        <p className="text-xs text-muted-foreground">{formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}</p>
+                        {seg.newText && <p className="text-xs mt-1 line-clamp-2">{seg.newText}</p>}
                       </div>
-                      <button onClick={() => remove(i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                      <button onClick={() => remove(i)} className="text-muted-foreground hover:text-destructive pt-1"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   ))}
-                  <Button variant="outline" size="sm" onClick={() => editedSegments.length > 0 && setEditedSegments([...editedSegments, { ...editedSegments[editedSegments.length-1] }])} className="w-full">
-                    <Plus className="h-4 w-4" /> Add Scene
-                  </Button>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {timeline.segments.map((seg, i) => (
-                    <div key={i} className="flex items-center gap-3 p-2 rounded border border-border">
-                      <span className="text-xs font-medium text-muted-foreground w-6">{i+1}</span>
-                      <div className="flex-1">
-                        <p className="text-sm">{seg.videoId.slice(0,8)}…</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` - ${formatTime(seg.trimEnd)}` : " - end"}
-                        </p>
-                        {seg.reason && <p className="text-xs text-muted-foreground italic">{seg.reason}</p>}
+                    <div key={i} className="p-3 rounded border border-border">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{i+1}. {seg.sceneTitle || `Scene ${i+1}`}</p>
+                        <span className="text-xs text-muted-foreground shrink-0">{formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}</span>
                       </div>
+                      {seg.newText && <p className="text-sm mt-1">{seg.newText}</p>}
+                      {seg.originalText && <p className="text-xs text-muted-foreground mt-1 italic line-clamp-2">was: {seg.originalText}</p>}
                     </div>
                   ))}
                 </div>
@@ -254,7 +256,7 @@ export default function ProjectDetailPage() {
         {isDone && !showEditor && (
           <Card>
             <CardContent className="p-4 space-y-3">
-              <p className="font-medium">Output Video</p>
+              <p className="font-medium">Recreated video</p>
               <video src={`/api/projects/${id}/output`} controls className="w-full max-w-sm mx-auto rounded" />
               <a href={`/api/projects/${id}/output`} download>
                 <Button variant="outline" size="sm"><Download className="h-4 w-4" /> Download MP4</Button>
