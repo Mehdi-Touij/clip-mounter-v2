@@ -97,7 +97,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
   - ✅ **2a** — scene-index foundation: add competitor videos to a niche → ingest (transcript+download) → **keyword scene search** over transcript segments (exact timestamp + source). Done, live 2026-07-13.
   - ✅ **2b** — semantic (vector) scene search: local Transformers.js embeddings (all-MiniLM-L6-v2, 384-dim, WASM, cached on volume) → `scenes` table → cosine ranking. Done, live 2026-07-13.
   - ⬜ **2c** — visual index: shot-detect (PySceneDetect) + self-hosted captions (Florence-2/Moondream/CLIP).
-  - ⬜ **2d** — competitor spy: YouTube Data API → auto-enumerate channel videos + stats. **Needs a YouTube Data API key.**
+  - ✅ **2d** — competitor spy: YouTube Data API → resolve channels + pull uploads + stats → spy dashboard (metrics + top performers) → one-click "Index" into the scene library. Done, live 2026-07-13.
 - ⬜ **v2 Phase 3** — AI producer: rank daily video ideas from news + winning competitor topics.
 - ⬜ **v2 Phase 4** — wire producer → factory + **ElevenLabs voiceover** + scene matching from the index.
 - ⬜ **v2 Phase 5** — publishing (upload/schedule to your channels) + performance feedback loop.
@@ -107,7 +107,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
 ## 7. Key facts, deps & gotchas (institutional memory)
 
 - **OLLAMA_API_KEY** is set in Railway env for both `app-gh` and `app-v2`. Not in the repo.
-- **YouTube Data API key** — required for Phase 2 spy (free, from a Google Cloud project). Not yet provided.
+- **YT_API_KEY** (YouTube Data API v3) is set in `app-v2` Railway env. Free, 10k units/day. `youtube.ts` uses only cheap endpoints (channels/playlistItems/videos.list ≈ 4 units/channel) — **never `search.list`** (100 units).
 - **Downloads:** direct `yt-dlp` from the server IP works surprisingly well even on Railway datacenter IPs (verified). If bot-walled at scale, drop a real `youtube-cookies.txt` (git-ignored, mounted read-only). No proxies.
 - **Browser video preview:** the source MP4 loads fine (faststart H.264+AAC). Early "black preview" was **timing** (clicked Play before buffering) — fixed with first-frame seek + canplay guard. Detached `<video>` elements don't load media in Chrome (misleading when debugging).
 - **Railway gotchas:** (1) Dockerfile **`VOLUME` instruction is rejected** — removed it; volumes are external. (2) `railway up` (CLI upload) failed silently at "scheduling build" — use the **GitHub integration** (`railway add --repo --branch`) instead. (3) `--ci` isn't the culprit; CLI-upload path itself was.
@@ -145,6 +145,9 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (evening)
+- **v2 Phase 2d shipped** — competitor spy. `src/lib/youtube.ts` (YouTube Data API v3, cheap endpoints); `channel_videos` table; routes `/sync`, `/spy`, `/channel-videos/[cvid]/index`; niche UI Sync button + Competitor intelligence dashboard (metrics + top performers + one-click Index). `YT_API_KEY` set in `app-v2` env. Verified live: synced 4 royal channels → 200 videos, top = "The King explores Shenandoah National Park" 730k views (~$2,923 est).
 
 ### 2026-07-13 (later still)
 - **v2 Phase 2b shipped** — semantic scene search. Added `@huggingface/transformers` (all-MiniLM-L6-v2, WASM, model cached to `/data/models`); `src/lib/embeddings.ts`; `scenes` table + worker `sceneIndexLoop` (chunk ~10s → embed → store). `/api/niches/[id]/scenes` ranks by cosine similarity (keyword fallback while indexing). **Ollama Cloud does NOT serve embeddings** (unauthorized) — so embeddings are fully local/free. Verified live: keyword-free queries returned the semantically-correct moments (e.g. "life is short so pursue what matters" → "Your time is limited…").
