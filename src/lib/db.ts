@@ -178,6 +178,7 @@ function initSchema(db: any) {
       rationale   TEXT DEFAULT '',
       priority    INTEGER DEFAULT 0,
       status      TEXT DEFAULT 'suggested',
+      project_id  TEXT DEFAULT '',
       created_at  TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_ideas_niche ON video_ideas(niche_id);
@@ -201,6 +202,12 @@ function initSchema(db: any) {
 
   const projCols = db.prepare("PRAGMA table_info(projects)").all().map((c: { name: string }) => c.name);
   if (!projCols.includes("source_video_id")) db.exec("ALTER TABLE projects ADD COLUMN source_video_id TEXT DEFAULT ''");
+
+  const ideaTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='video_ideas'").get();
+  if (ideaTable) {
+    const ideaCols = db.prepare("PRAGMA table_info(video_ideas)").all().map((c: { name: string }) => c.name);
+    if (!ideaCols.includes("project_id")) db.exec("ALTER TABLE video_ideas ADD COLUMN project_id TEXT DEFAULT ''");
+  }
 }
 
 // === Video operations ===
@@ -518,14 +525,14 @@ export async function deleteScenesForVideo(videoId: string): Promise<void> {
   db.prepare("DELETE FROM scenes WHERE video_id = ?").run(videoId);
 }
 
-/** All scenes of a niche joined with their video title/channel (for search ranking). */
-export async function listNicheSceneRows(nicheId: string): Promise<Array<SceneRow & { video_title: string; channel: string }>> {
+/** All scenes of a niche joined with their video title/channel/download status. */
+export async function listNicheSceneRows(nicheId: string): Promise<Array<SceneRow & { video_title: string; channel: string; download_status: string; youtube_url: string }>> {
   const db = await getDb();
   return db
-    .prepare(`SELECT s.*, v.title AS video_title, v.channel AS channel
+    .prepare(`SELECT s.*, v.title AS video_title, v.channel AS channel, v.download_status AS download_status, v.youtube_url AS youtube_url
               FROM scenes s JOIN videos v ON v.id = s.video_id
               WHERE s.niche_id = ?`)
-    .all(nicheId) as Array<SceneRow & { video_title: string; channel: string }>;
+    .all(nicheId) as Array<SceneRow & { video_title: string; channel: string; download_status: string; youtube_url: string }>;
 }
 
 // --- competitor spy (YouTube Data API) ---
@@ -589,7 +596,17 @@ export async function listNews(nicheId: string, limit = 40): Promise<NewsItemRow
   return db.prepare("SELECT * FROM news_items WHERE niche_id = ? ORDER BY published_at DESC LIMIT ?").all(nicheId, limit) as NewsItemRow[];
 }
 
-export interface VideoIdeaRow { id: string; niche_id: string; title: string; angle: string; rationale: string; priority: number; status: string; created_at: string }
+export interface VideoIdeaRow { id: string; niche_id: string; title: string; angle: string; rationale: string; priority: number; status: string; project_id: string; created_at: string }
+
+export async function getIdea(id: string): Promise<VideoIdeaRow | null> {
+  const db = await getDb();
+  return (db.prepare("SELECT * FROM video_ideas WHERE id = ?").get(id) as VideoIdeaRow) ?? null;
+}
+
+export async function markIdeaAssembled(id: string, projectId: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("UPDATE video_ideas SET status = 'assembled', project_id = ? WHERE id = ?").run(projectId, id);
+}
 
 export async function replaceIdeas(nicheId: string, ideas: { title: string; angle: string; rationale: string; priority: number }[]): Promise<void> {
   const db = await getDb();

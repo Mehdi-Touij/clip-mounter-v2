@@ -116,6 +116,8 @@ export default function ProjectDetailPage() {
   const isPlanned = project.status === "planned" || project.status === "rendering" || project.status === "done";
   const isDone = project.status === "done" && project.output_path;
   const totalLen = timeline ? timeline.segments.reduce((a, s) => a + (s.trimEnd !== null ? (s.trimEnd ?? 0) - s.trimStart : 0), 0) : 0;
+  const sourceCount = timeline ? new Set(timeline.segments.map((s) => s.videoId)).size : 0;
+  const isAssembled = sourceCount > 1; // multi-source = AI-assembled from the scene library
 
   return (
     <div className="mx-auto max-w-4xl px-5 py-8 md:px-10">
@@ -126,7 +128,11 @@ export default function ProjectDetailPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
-          {sourceTitle && (
+          {isAssembled ? (
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Film className="h-3.5 w-3.5" /> AI-assembled from <span className="font-medium text-foreground">{sourceCount} source clips</span>
+            </p>
+          ) : sourceTitle && (
             <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
               <Film className="h-3.5 w-3.5" /> Recreating <span className="font-medium text-foreground">{sourceTitle}</span>
             </p>
@@ -142,22 +148,24 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Recreate panel */}
-      <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary"><Sparkles className="h-4 w-4" /></span>
-          <div>
-            <p className="text-sm font-semibold">Recreate with AI</p>
-            <p className="text-xs text-muted-foreground">Rewords the script (same meaning) and reshuffles scenes.</p>
+      {/* Recreate panel — only for single-source recreation projects */}
+      {!isAssembled && (
+        <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary"><Sparkles className="h-4 w-4" /></span>
+            <div>
+              <p className="text-sm font-semibold">Recreate with AI</p>
+              <p className="text-xs text-muted-foreground">Rewords the script (same meaning) and reshuffles scenes.</p>
+            </div>
           </div>
+          <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)}
+            placeholder="Optional style notes (e.g. 'punchier tone', 'keep the intro first')…" rows={2} className="mb-3" />
+          <Button onClick={recreate} disabled={recreating || isBusy}>
+            {recreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {recreating ? "Recreating…" : isPlanned ? "Recreate again" : "Recreate with AI"}
+          </Button>
         </div>
-        <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Optional style notes (e.g. 'punchier tone', 'keep the intro first')…" rows={2} className="mb-3" />
-        <Button onClick={recreate} disabled={recreating || isBusy}>
-          {recreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {recreating ? "Recreating…" : isPlanned ? "Recreate again" : "Recreate with AI"}
-        </Button>
-      </div>
+      )}
 
       {/* Workspace */}
       {isPlanned && timeline && (
@@ -168,7 +176,7 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-muted-foreground">{timeline.segments.length} scenes · ~{formatTime(totalLen)} total</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={() => setStudioOpen(true)}><Clapperboard className="h-4 w-4" /> Open editor</Button>
+              {!isAssembled && <Button onClick={() => setStudioOpen(true)}><Clapperboard className="h-4 w-4" /> Open editor</Button>}
               <Button variant="outline" onClick={() => exportSegments(timeline.segments)} disabled={rendering || isBusy}>
                 {rendering || isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 {isBusy ? "Exporting…" : "Export"}
