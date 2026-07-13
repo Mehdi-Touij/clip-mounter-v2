@@ -155,6 +155,32 @@ function initSchema(db: any) {
       UNIQUE(niche_id, youtube_id)
     );
     CREATE INDEX IF NOT EXISTS idx_channel_videos_niche ON channel_videos(niche_id);
+
+    -- v2 Phase 3: news + AI producer
+    CREATE TABLE IF NOT EXISTS news_items (
+      id           TEXT PRIMARY KEY,
+      niche_id     TEXT NOT NULL,
+      title        TEXT DEFAULT '',
+      link         TEXT DEFAULT '',
+      source       TEXT DEFAULT '',
+      published_at TEXT DEFAULT '',
+      summary      TEXT DEFAULT '',
+      created_at   TEXT DEFAULT (datetime('now')),
+      UNIQUE(niche_id, link)
+    );
+    CREATE INDEX IF NOT EXISTS idx_news_niche ON news_items(niche_id);
+
+    CREATE TABLE IF NOT EXISTS video_ideas (
+      id          TEXT PRIMARY KEY,
+      niche_id    TEXT NOT NULL,
+      title       TEXT DEFAULT '',
+      angle       TEXT DEFAULT '',
+      rationale   TEXT DEFAULT '',
+      priority    INTEGER DEFAULT 0,
+      status      TEXT DEFAULT 'suggested',
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ideas_niche ON video_ideas(niche_id);
   `);
 
   // Lightweight migration for older DBs that predate the new columns.
@@ -542,4 +568,42 @@ export async function getChannelVideo(id: string): Promise<ChannelVideoRow | nul
 export async function markChannelVideoIndexed(id: string): Promise<void> {
   const db = await getDb();
   db.prepare("UPDATE channel_videos SET indexed = 1 WHERE id = ?").run(id);
+}
+
+// --- news + producer (Phase 3) ---
+
+export interface NewsItemRow { id: string; niche_id: string; title: string; link: string; source: string; published_at: string; summary: string }
+
+export async function upsertNews(nicheId: string, item: { title: string; link: string; source: string; published_at: string; summary: string }): Promise<void> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  db.prepare(
+    `INSERT INTO news_items (id, niche_id, title, link, source, published_at, summary)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(niche_id, link) DO UPDATE SET title=excluded.title, published_at=excluded.published_at, summary=excluded.summary`,
+  ).run(randomUUID(), nicheId, item.title, item.link, item.source, item.published_at, item.summary);
+}
+
+export async function listNews(nicheId: string, limit = 40): Promise<NewsItemRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM news_items WHERE niche_id = ? ORDER BY published_at DESC LIMIT ?").all(nicheId, limit) as NewsItemRow[];
+}
+
+export interface VideoIdeaRow { id: string; niche_id: string; title: string; angle: string; rationale: string; priority: number; status: string; created_at: string }
+
+export async function replaceIdeas(nicheId: string, ideas: { title: string; angle: string; rationale: string; priority: number }[]): Promise<void> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  const del = db.prepare("DELETE FROM video_ideas WHERE niche_id = ? AND status = 'suggested'");
+  const ins = db.prepare("INSERT INTO video_ideas (id, niche_id, title, angle, rationale, priority) VALUES (?, ?, ?, ?, ?, ?)");
+  const tx = db.transaction(() => {
+    del.run(nicheId);
+    for (const i of ideas) ins.run(randomUUID(), nicheId, i.title, i.angle, i.rationale, i.priority);
+  });
+  tx();
+}
+
+export async function listIdeas(nicheId: string): Promise<VideoIdeaRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM video_ideas WHERE niche_id = ? ORDER BY priority ASC, created_at DESC").all(nicheId) as VideoIdeaRow[];
 }

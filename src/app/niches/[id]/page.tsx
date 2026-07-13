@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Video, Rss, Trash2, Plus, Target, Search, Eye, RotateCcw } from "lucide-react";
+import { ArrowLeft, Loader2, Video, Rss, Trash2, Plus, Target, Search, Eye, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 
@@ -92,10 +92,13 @@ export default function NicheDetailPage() {
     <div className="mx-auto max-w-4xl px-5 py-8 md:px-10">
       <Link href="/niches" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="h-4 w-4" /> All niches</Link>
 
-      <div className="mb-6 flex items-start gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Target className="h-5 w-5" /></span>
-        <div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{niche.name}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{niche.format === "long" ? "Long-form" : "Shorts"} · {niche.videos_per_day} videos/day{niche.description ? ` · ${niche.description}` : ""}</p></div>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Target className="h-5 w-5" /></span>
+          <div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{niche.name}</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">{niche.format === "long" ? "Long-form" : "Shorts"} · {niche.videos_per_day} videos/day{niche.description ? ` · ${niche.description}` : ""}</p></div>
+        </div>
+        <Link href={`/niches/${id}/produce`}><Button><Sparkles className="h-4 w-4" /> Today&apos;s plan</Button></Link>
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
