@@ -84,6 +84,43 @@ function initSchema(db: any) {
     CREATE INDEX IF NOT EXISTS idx_videos_transcript_status ON videos(transcript_status);
     CREATE INDEX IF NOT EXISTS idx_videos_download_status ON videos(download_status);
     CREATE INDEX IF NOT EXISTS idx_render_jobs_status ON render_jobs(status);
+
+    -- v2: niches (a niche = a content vertical with competitors + news sources)
+    CREATE TABLE IF NOT EXISTS niches (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      description     TEXT DEFAULT '',
+      language        TEXT DEFAULT 'en',
+      format          TEXT DEFAULT 'shorts',   -- shorts | long
+      videos_per_day  INTEGER DEFAULT 4,
+      created_at      TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS niche_channels (
+      id            TEXT PRIMARY KEY,
+      niche_id      TEXT NOT NULL,
+      url           TEXT NOT NULL,
+      handle        TEXT DEFAULT '',
+      title         TEXT DEFAULT '',
+      channel_id    TEXT DEFAULT '',
+      subscribers   INTEGER DEFAULT 0,
+      video_count   INTEGER DEFAULT 0,
+      status        TEXT DEFAULT 'added',       -- added | syncing | synced | error
+      last_synced   TEXT,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS niche_sources (
+      id          TEXT PRIMARY KEY,
+      niche_id    TEXT NOT NULL,
+      type        TEXT DEFAULT 'rss',           -- rss | page
+      url         TEXT NOT NULL,
+      title       TEXT DEFAULT '',
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_niche_channels_niche ON niche_channels(niche_id);
+    CREATE INDEX IF NOT EXISTS idx_niche_sources_niche ON niche_sources(niche_id);
   `);
 
   // Lightweight migration for older DBs that predate the new columns.
@@ -275,4 +312,103 @@ export async function recoverStuckJobs(): Promise<number> {
     .prepare("UPDATE render_jobs SET status = 'queued', updated_at = datetime('now') WHERE status = 'processing'")
     .run();
   return res.changes as number;
+}
+
+// ============================================================================
+// v2 — niches, competitor channels, news sources
+// ============================================================================
+
+export interface NicheRow {
+  id: string;
+  name: string;
+  description: string;
+  language: string;
+  format: string;
+  videos_per_day: number;
+  created_at: string;
+}
+export interface NicheChannelRow {
+  id: string;
+  niche_id: string;
+  url: string;
+  handle: string;
+  title: string;
+  channel_id: string;
+  subscribers: number;
+  video_count: number;
+  status: string;
+  last_synced: string | null;
+  created_at: string;
+}
+export interface NicheSourceRow {
+  id: string;
+  niche_id: string;
+  type: string;
+  url: string;
+  title: string;
+  created_at: string;
+}
+
+export async function listNiches(): Promise<NicheRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM niches ORDER BY created_at DESC").all() as NicheRow[];
+}
+export async function getNiche(id: string): Promise<NicheRow | null> {
+  const db = await getDb();
+  return (db.prepare("SELECT * FROM niches WHERE id = ?").get(id) as NicheRow) ?? null;
+}
+export async function insertNiche(v: Pick<NicheRow, "name" | "description" | "language" | "format" | "videos_per_day">): Promise<string> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO niches (id, name, description, language, format, videos_per_day)
+     VALUES (@id, @name, @description, @language, @format, @videos_per_day)`,
+  ).run({ id, ...v });
+  return id;
+}
+export async function updateNiche(id: string, updates: Partial<NicheRow>): Promise<void> {
+  const db = await getDb();
+  const fields = Object.keys(updates).filter((k) => ["name", "description", "language", "format", "videos_per_day"].includes(k));
+  if (!fields.length) return;
+  const sets = fields.map((f) => `${f} = @${f}`).join(", ");
+  db.prepare(`UPDATE niches SET ${sets} WHERE id = @id`).run({ id, ...updates });
+}
+export async function deleteNiche(id: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("DELETE FROM niche_channels WHERE niche_id = ?").run(id);
+  db.prepare("DELETE FROM niche_sources WHERE niche_id = ?").run(id);
+  db.prepare("DELETE FROM niches WHERE id = ?").run(id);
+}
+
+export async function listChannels(nicheId: string): Promise<NicheChannelRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM niche_channels WHERE niche_id = ? ORDER BY created_at ASC").all(nicheId) as NicheChannelRow[];
+}
+export async function addChannel(nicheId: string, url: string, handle: string): Promise<string> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  const id = randomUUID();
+  db.prepare("INSERT INTO niche_channels (id, niche_id, url, handle, title) VALUES (?, ?, ?, ?, ?)").run(id, nicheId, url, handle, handle);
+  return id;
+}
+export async function deleteChannel(id: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("DELETE FROM niche_channels WHERE id = ?").run(id);
+}
+
+export async function listSources(nicheId: string): Promise<NicheSourceRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM niche_sources WHERE niche_id = ? ORDER BY created_at ASC").all(nicheId) as NicheSourceRow[];
+}
+export async function addSource(nicheId: string, type: string, url: string, title: string): Promise<string> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  const id = randomUUID();
+  db.prepare("INSERT INTO niche_sources (id, niche_id, type, url, title) VALUES (?, ?, ?, ?, ?)").run(id, nicheId, type, url, title);
+  return id;
+}
+export async function deleteSource(id: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("DELETE FROM niche_sources WHERE id = ?").run(id);
 }

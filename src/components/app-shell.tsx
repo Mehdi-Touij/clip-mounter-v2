@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, Library, Wand2, Moon, Sun } from "lucide-react";
+import { Clapperboard, Library, Wand2, Moon, Sun, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
+  { href: "/niches", label: "Niches", icon: Target, match: (p: string) => p.startsWith("/niches") },
   { href: "/library", label: "Library", icon: Library, match: (p: string) => p.startsWith("/library") },
   { href: "/projects", label: "Recreations", icon: Wand2, match: (p: string) => p.startsWith("/projects") },
 ];
@@ -49,7 +50,7 @@ function Brand() {
         <Clapperboard className="h-5 w-5" />
       </span>
       <span className="flex flex-col leading-none">
-        <span className="text-[15px] font-semibold tracking-tight">Recut</span>
+        <span className="text-[15px] font-semibold tracking-tight">Recut <span className="align-super text-[9px] font-medium text-primary">v2</span></span>
         <span className="text-[11px] text-muted-foreground">Studio</span>
       </span>
     </Link>
