@@ -22,6 +22,7 @@ import {
   type VideoRow,
 } from "../src/lib/db";
 import { embedBatch } from "../src/lib/embeddings";
+import { synthesize, ttsEnabled } from "../src/lib/tts";
 import type { Timeline } from "../src/lib/types";
 
 const PYTHON = process.env.PYTHON ?? "python3";
@@ -174,19 +175,42 @@ async function renderTimeline(projectId: string, timeline: Timeline): Promise<st
         throw new Error(`source video ${seg.videoId} not downloaded yet — cannot render`);
       }
       const segPath = path.join(tmpDir, `seg-${String(i).padStart(3, "0")}.mp4`);
-      const args = ["-y", "-ss", String(seg.trimStart)];
-      if (seg.trimEnd !== null && seg.trimEnd !== undefined) args.push("-to", String(seg.trimEnd));
-      args.push(
-        "-i", src,
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30",
-        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-        "-movflags", "+faststart",
-        segPath,
-      );
-      await runCmd("ffmpeg", args, 300);
+      const VF = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30";
+
+      let voiced = false;
+      if (timeline.voiceover && seg.newText && ttsEnabled()) {
+        try {
+          // 1. silent, scaled footage clip
+          const rawPath = path.join(tmpDir, `raw-${i}.mp4`);
+          const rawArgs = ["-y", "-ss", String(seg.trimStart)];
+          if (seg.trimEnd !== null && seg.trimEnd !== undefined) rawArgs.push("-to", String(seg.trimEnd));
+          rawArgs.push("-i", src, "-vf", VF, "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", rawPath);
+          await runCmd("ffmpeg", rawArgs, 200);
+          // 2. AI voiceover of this scene's script line
+          const audioPath = path.join(tmpDir, `vo-${i}.mp3`);
+          fs.writeFileSync(audioPath, await synthesize(seg.newText));
+          // 3. loop the footage to the narration length + attach the voice
+          await runCmd("ffmpeg", [
+            "-y", "-stream_loop", "-1", "-i", rawPath, "-i", audioPath,
+            "-map", "0:v:0", "-map", "1:a:0", "-shortest",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-movflags", "+faststart", segPath,
+          ], 200);
+          voiced = true;
+        } catch (e) {
+          log(`  voiceover failed for scene ${i + 1} (${(e as Error).message.slice(0, 80)}) — using original audio`);
+        }
+      }
+
+      if (!voiced) {
+        const args = ["-y", "-ss", String(seg.trimStart)];
+        if (seg.trimEnd !== null && seg.trimEnd !== undefined) args.push("-to", String(seg.trimEnd));
+        args.push("-i", src, "-vf", VF, "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+          "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-movflags", "+faststart", segPath);
+        await runCmd("ffmpeg", args, 300);
+      }
       concat.push(`file '${segPath.replace(/'/g, "'\\''")}'`);
-      log(`  cut ${i + 1}/${timeline.segments.length}`);
+      log(`  ${voiced ? "voiced" : "cut"} ${i + 1}/${timeline.segments.length}`);
     }
 
     const listPath = path.join(tmpDir, "concat.txt");

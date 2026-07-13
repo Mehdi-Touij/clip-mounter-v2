@@ -18,6 +18,7 @@ export interface Timeline {
   width: number;
   height: number;
   segments: TimelineSegment[];
+  voiceover?: boolean; // true = render narrates `newText` (AI voiceover over footage)
 }
 
 export const RENDER_CONFIG = {

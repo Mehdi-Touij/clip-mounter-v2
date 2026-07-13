@@ -78,7 +78,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   // 3. Create project + timeline, auto-render.
   const projectId = await insertProject(idea.title.slice(0, 120), segments[0].videoId);
-  const timeline: Timeline = { fps: 30, width: 1080, height: 1920, segments };
+  const timeline: Timeline = { fps: 30, width: 1080, height: 1920, segments, voiceover: true };
   await updateProject(projectId, { timeline_json: JSON.stringify(timeline), status: "rendering", error: null });
   await insertRenderJob(projectId);
   await markIdeaAssembled(ideaId, projectId);
