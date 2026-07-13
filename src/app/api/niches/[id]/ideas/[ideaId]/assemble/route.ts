@@ -52,8 +52,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try { beats = (JSON.parse(match?.[0] ?? "{}").beats ?? []).map((b: unknown) => String(b)).filter(Boolean); } catch {}
   if (beats.length === 0) return NextResponse.json({ error: "Could not write a script. Try again." }, { status: 422 });
 
-  // 2. Match each beat to the best unused scene (semantic).
-  const parsedScenes = scenes.map((s) => { let e: number[] = []; try { e = JSON.parse(s.embedding); } catch {} return { ...s, vec: e }; });
+  const allScenes = scenes.map((s) => { let e: number[] = []; try { e = JSON.parse(s.embedding); } catch {} return { ...s, vec: e }; });
+
+  // 2. EVENT-LEVEL CURATION — pick the videos most relevant to this idea, then draw
+  // scenes only from those, so every clip is on-topic by construction.
+  const ideaVec = await embed(`${idea.title}. ${idea.angle}`);
+  const byVideo = new Map<string, { rows: typeof allScenes; rel: number }>();
+  for (const s of allScenes) {
+    const rel = cosine(ideaVec, s.vec);
+    const g = byVideo.get(s.video_id) ?? { rows: [], rel: -1 };
+    g.rows.push(s); g.rel = Math.max(g.rel, rel);
+    byVideo.set(s.video_id, g);
+  }
+  const rankedVideos = [...byVideo.values()].sort((a, b) => b.rel - a.rel);
+  const TOP_VIDEOS = 4;
+  const parsedScenes = rankedVideos.slice(0, TOP_VIDEOS).flatMap((v) => v.rows);
+
+  // 3. Match each beat to the best unused scene within the curated pool (semantic).
   const used = new Set<string>();
   const segments: TimelineSegment[] = [];
   for (let i = 0; i < beats.length; i++) {
@@ -77,7 +92,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
   if (segments.length === 0) return NextResponse.json({ error: "No scenes matched the script. Index more videos." }, { status: 422 });
 
-  // 3. Create project + timeline, auto-render.
+  // 5. Create project + timeline, auto-render.
   const projectId = await insertProject(idea.title.slice(0, 120), segments[0].videoId);
   const timeline: Timeline = { fps: 30, width: 1080, height: 1920, segments, voiceover: true };
   await updateProject(projectId, { timeline_json: JSON.stringify(timeline), status: "rendering", error: null });
