@@ -100,7 +100,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
   - ✅ **2d** — competitor spy: YouTube Data API → resolve channels + pull uploads + stats → spy dashboard (metrics + top performers) → one-click "Index" into the scene library. Done, live 2026-07-13.
 - 🟡 **v2 Phase 3** — AI producer:
   - ✅ **3a+3b** — RSS news ingestion + producer ranks daily video ideas from news + competitor top performers (LLM). Done, live 2026-07-13.
-  - ⬜ **3c** — assemble an idea → script → match scenes from the index → timeline → factory render.
+  - ✅ **3c** — assemble: idea → AI script → each beat matched to the best downloaded scene (semantic) → multi-source timeline → project → auto-render. Done, live 2026-07-13. (Match quality scales with how much of the library is indexed.)
 - ⬜ **v2 Phase 4** — wire producer → factory + **ElevenLabs voiceover** + scene matching from the index.
 - ⬜ **v2 Phase 5** — publishing (upload/schedule to your channels) + performance feedback loop.
 
@@ -147,6 +147,11 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (late night) — FULL LOOP CLOSED
+- **v2 Phase 3c shipped** — assembly. `/api/niches/[id]/ideas/[ideaId]/assemble`: LLM writes a script → each beat matched to the best unused downloaded scene (semantic) → multi-source timeline → project created + auto-rendered. `video_ideas.project_id` (+migration); `listNicheSceneRows` returns `download_status`/`youtube_url`; project page detects multi-source (assembled) and shows review+Export (hides single-source Studio/Recreate). Producer page: Assemble → rendering project → "Open video".
+- **End-to-end verified live:** idea "Americans GO WILD for King Charles in Virginia" → AI script (6 royal beats) → matched scenes → **rendered a 48s 1080×1920 MP4**. The entire vision is now connected: niche → spy → scene index → producer → assemble → render → downloadable video. (Scene-match quality was thin because only 2 videos had finished embedding — improves with a fuller index.)
+- Remaining: 2c visual index, Phase 4 ElevenLabs voiceover, Phase 5 publishing + feedback loop.
 
 ### 2026-07-13 (night)
 - **v2 Phase 3 (3a+3b) shipped** — news + AI producer. `rss-parser` + `src/lib/news.ts`; `news_items` + `video_ideas` tables; routes `/news`, `/news/refresh`, `/produce`, `/ideas`; Producer page `/niches/[id]/produce` (Refresh news + Suggest today's videos → ranked idea cards). Verified live: 40 news items → 4 ranked royal video ideas whose rationale cited real competitor view counts (730K Shenandoah, 117K 9/11). Next: 3c assembly (idea → matched scenes → render).
