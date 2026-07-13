@@ -135,6 +135,26 @@ function initSchema(db: any) {
     );
     CREATE INDEX IF NOT EXISTS idx_scenes_niche ON scenes(niche_id);
     CREATE INDEX IF NOT EXISTS idx_scenes_video ON scenes(video_id);
+
+    -- v2 Phase 2d: competitor spy — public per-video stats pulled via YouTube Data API
+    CREATE TABLE IF NOT EXISTS channel_videos (
+      id            TEXT PRIMARY KEY,
+      niche_id      TEXT NOT NULL,
+      channel_ref   TEXT DEFAULT '',
+      channel_title TEXT DEFAULT '',
+      youtube_id    TEXT NOT NULL,
+      title         TEXT DEFAULT '',
+      published_at  TEXT DEFAULT '',
+      views         INTEGER DEFAULT 0,
+      likes         INTEGER DEFAULT 0,
+      comments      INTEGER DEFAULT 0,
+      duration      INTEGER DEFAULT 0,
+      thumbnail     TEXT DEFAULT '',
+      indexed       INTEGER DEFAULT 0,
+      created_at    TEXT DEFAULT (datetime('now')),
+      UNIQUE(niche_id, youtube_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_channel_videos_niche ON channel_videos(niche_id);
   `);
 
   // Lightweight migration for older DBs that predate the new columns.
@@ -480,4 +500,46 @@ export async function listNicheSceneRows(nicheId: string): Promise<Array<SceneRo
               FROM scenes s JOIN videos v ON v.id = s.video_id
               WHERE s.niche_id = ?`)
     .all(nicheId) as Array<SceneRow & { video_title: string; channel: string }>;
+}
+
+// --- competitor spy (YouTube Data API) ---
+
+export async function updateChannel(id: string, u: Partial<NicheChannelRow>): Promise<void> {
+  const db = await getDb();
+  const fields = Object.keys(u).filter((k) => ["title", "channel_id", "subscribers", "video_count", "status", "last_synced"].includes(k));
+  if (!fields.length) return;
+  db.prepare(`UPDATE niche_channels SET ${fields.map((f) => `${f} = @${f}`).join(", ")} WHERE id = @id`).run({ id, ...u });
+}
+
+export interface ChannelVideoRow {
+  id: string; niche_id: string; channel_ref: string; channel_title: string; youtube_id: string;
+  title: string; published_at: string; views: number; likes: number; comments: number; duration: number; thumbnail: string; indexed: number;
+}
+
+export async function upsertChannelVideo(v: Omit<ChannelVideoRow, "id" | "indexed">): Promise<void> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  db.prepare(
+    `INSERT INTO channel_videos (id, niche_id, channel_ref, channel_title, youtube_id, title, published_at, views, likes, comments, duration, thumbnail)
+     VALUES (@id, @niche_id, @channel_ref, @channel_title, @youtube_id, @title, @published_at, @views, @likes, @comments, @duration, @thumbnail)
+     ON CONFLICT(niche_id, youtube_id) DO UPDATE SET
+       title=excluded.title, published_at=excluded.published_at, views=excluded.views,
+       likes=excluded.likes, comments=excluded.comments, duration=excluded.duration,
+       thumbnail=excluded.thumbnail, channel_title=excluded.channel_title`,
+  ).run({ id: randomUUID(), ...v });
+}
+
+export async function listChannelVideos(nicheId: string, limit = 100): Promise<ChannelVideoRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM channel_videos WHERE niche_id = ? ORDER BY views DESC LIMIT ?").all(nicheId, limit) as ChannelVideoRow[];
+}
+
+export async function getChannelVideo(id: string): Promise<ChannelVideoRow | null> {
+  const db = await getDb();
+  return (db.prepare("SELECT * FROM channel_videos WHERE id = ?").get(id) as ChannelVideoRow) ?? null;
+}
+
+export async function markChannelVideoIndexed(id: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("UPDATE channel_videos SET indexed = 1 WHERE id = ?").run(id);
 }
