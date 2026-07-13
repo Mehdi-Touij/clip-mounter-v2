@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Play, Pause, Scissors, Trash2, ZoomIn, ZoomOut, SkipBack, Music, Video as VideoIcon } from "lucide-react";
+import { Play, Pause, Scissors, Trash2, ZoomIn, ZoomOut, SkipBack, Music, Video as VideoIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface EditorSegment {
@@ -36,6 +36,7 @@ export function TimelineEditor({ sourceVideoId, sourceDuration, segments, onChan
   const [segs, setSegs] = useState<EditorSegment[]>(segments);
   const [selected, setSelected] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [ready, setReady] = useState(false);
   const [playhead, setPlayhead] = useState(0); // output-timeline seconds
   const [pxPerSec, setPxPerSec] = useState(14);
 
@@ -108,12 +109,27 @@ export function TimelineEditor({ sourceVideoId, sourceDuration, segments, onChan
     curIndex.current = index;
     v.currentTime = src;
     pendingSeek.current = src;
-    v.play().then(() => {
+    const start = () => v.play().then(() => {
       setPlaying(true);
       stopRaf();
       rafRef.current = requestAnimationFrame(tick);
     }).catch(() => {});
+    if (v.readyState >= 2) start();
+    else v.addEventListener("canplay", start, { once: true });
   }, [segs, playhead, total, mapOut, tick]);
+
+  // Once the source is ready, show the first clip's frame instead of a black poster.
+  const onMeta = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    setReady(v.readyState >= 2);
+    if (!playing) {
+      const { index, src } = mapOut(playhead);
+      curIndex.current = index;
+      v.currentTime = src;
+      pendingSeek.current = src;
+    }
+  }, [mapOut, playhead, playing]);
 
   const scrub = useCallback((out: number) => {
     const v = videoRef.current;
@@ -236,8 +252,15 @@ export function TimelineEditor({ sourceVideoId, sourceDuration, segments, onChan
               className="h-full w-full object-contain"
               playsInline
               preload="auto"
+              onLoadedMetadata={onMeta}
+              onCanPlay={() => setReady(true)}
               onEnded={() => pause()}
             />
+            {!ready && (
+              <div className="absolute inset-0 grid place-items-center bg-black/50 text-white/80">
+                <span className="flex items-center gap-2 text-xs"><Loader2 className="h-4 w-4 animate-spin" /> Loading source…</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => scrub(0)} title="To start"><SkipBack className="h-4 w-4" /></Button>
