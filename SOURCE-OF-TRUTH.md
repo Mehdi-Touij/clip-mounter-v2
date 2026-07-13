@@ -98,7 +98,9 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
   - ✅ **2b** — semantic (vector) scene search: local Transformers.js embeddings (all-MiniLM-L6-v2, 384-dim, WASM, cached on volume) → `scenes` table → cosine ranking. Done, live 2026-07-13.
   - ⬜ **2c** — visual index: shot-detect (PySceneDetect) + self-hosted captions (Florence-2/Moondream/CLIP).
   - ✅ **2d** — competitor spy: YouTube Data API → resolve channels + pull uploads + stats → spy dashboard (metrics + top performers) → one-click "Index" into the scene library. Done, live 2026-07-13.
-- ⬜ **v2 Phase 3** — AI producer: rank daily video ideas from news + winning competitor topics.
+- 🟡 **v2 Phase 3** — AI producer:
+  - ✅ **3a+3b** — RSS news ingestion + producer ranks daily video ideas from news + competitor top performers (LLM). Done, live 2026-07-13.
+  - ⬜ **3c** — assemble an idea → script → match scenes from the index → timeline → factory render.
 - ⬜ **v2 Phase 4** — wire producer → factory + **ElevenLabs voiceover** + scene matching from the index.
 - ⬜ **v2 Phase 5** — publishing (upload/schedule to your channels) + performance feedback loop.
 
@@ -145,6 +147,9 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (night)
+- **v2 Phase 3 (3a+3b) shipped** — news + AI producer. `rss-parser` + `src/lib/news.ts`; `news_items` + `video_ideas` tables; routes `/news`, `/news/refresh`, `/produce`, `/ideas`; Producer page `/niches/[id]/produce` (Refresh news + Suggest today's videos → ranked idea cards). Verified live: 40 news items → 4 ranked royal video ideas whose rationale cited real competitor view counts (730K Shenandoah, 117K 9/11). Next: 3c assembly (idea → matched scenes → render).
 
 ### 2026-07-13 (evening)
 - **v2 Phase 2d shipped** — competitor spy. `src/lib/youtube.ts` (YouTube Data API v3, cheap endpoints); `channel_videos` table; routes `/sync`, `/spy`, `/channel-videos/[cvid]/index`; niche UI Sync button + Competitor intelligence dashboard (metrics + top performers + one-click Index). `YT_API_KEY` set in `app-v2` env. Verified live: synced 4 royal channels → 200 videos, top = "The King explores Shenandoah National Park" 730k views (~$2,923 est).
