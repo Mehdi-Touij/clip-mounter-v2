@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Sparkles, Play, Download, Film, FileText, Clapperboard } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Play, Download, Film, Clapperboard } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusPill } from "@/components/status-pill";
-import { TimelineEditor, type EditorSegment } from "@/components/editor/timeline-editor";
+import { Studio, type EditorSegment } from "@/components/editor/studio";
 
 interface Timeline {
   fps: number;
@@ -49,8 +49,7 @@ export default function ProjectDetailPage() {
   const [sourceDuration, setSourceDuration] = useState(0);
   const [instructions, setInstructions] = useState("");
   const [timeline, setTimeline] = useState<Timeline | null>(null);
-  const [editedSegments, setEditedSegments] = useState<EditorSegment[]>([]);
-  const [tab, setTab] = useState<"script" | "editor">("editor");
+  const [studioOpen, setStudioOpen] = useState(false);
   const [recreating, setRecreating] = useState(false);
   const [rendering, setRendering] = useState(false);
 
@@ -59,11 +58,7 @@ export default function ProjectDetailPage() {
       const res = await fetch(`/api/projects/${id}`);
       const data = await res.json();
       setProject(data.project);
-      if (data.project?.timeline_json) {
-        const tl = JSON.parse(data.project.timeline_json) as Timeline;
-        setTimeline(tl);
-        setEditedSegments(tl.segments);
-      }
+      if (data.project?.timeline_json) setTimeline(JSON.parse(data.project.timeline_json) as Timeline);
       if (data.project?.source_video_id) {
         const vr = await fetch(`/api/videos/${data.project.source_video_id}`);
         const vd = await vr.json();
@@ -85,34 +80,30 @@ export default function ProjectDetailPage() {
     setRecreating(true);
     try {
       const res = await fetch(`/api/projects/${id}/recreate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instructions }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instructions }),
       });
       const data = await res.json();
-      if (data.timeline) { setTimeline(data.timeline); setEditedSegments(data.timeline.segments); }
+      if (data.timeline) setTimeline(data.timeline);
       else alert(data.error ?? "Recreation failed.");
       fetchProject();
     } catch { alert("Recreation failed."); }
     finally { setRecreating(false); }
   };
 
-  const exportVideo = async () => {
+  // Persist the given edit, then render.
+  const exportSegments = async (segments: EditorSegment[]) => {
     setRendering(true);
     try {
-      // Persist current edits, then render.
       if (timeline) {
+        const updated = { ...timeline, segments };
+        setTimeline(updated);
         await fetch(`/api/projects/${id}/timeline`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ timeline: { ...timeline, segments: editedSegments } }),
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timeline: updated }),
         });
       }
       const res = await fetch(`/api/projects/${id}/render`, { method: "POST" });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        alert(d.error ?? "Could not start export.");
-      }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error ?? "Could not start export."); }
+      setStudioOpen(false);
       fetchProject();
     } finally { setRendering(false); }
   };
@@ -124,11 +115,10 @@ export default function ProjectDetailPage() {
   const isBusy = project.status === "rendering";
   const isPlanned = project.status === "planned" || project.status === "rendering" || project.status === "done";
   const isDone = project.status === "done" && project.output_path;
-  const totalLen = editedSegments.reduce((a, s) => a + (s.trimEnd !== null ? (s.trimEnd ?? 0) - s.trimStart : 0), 0);
-  const timelineKey = timeline ? `${timeline.segments.length}:${JSON.stringify(timeline.segments).length}` : "none";
+  const totalLen = timeline ? timeline.segments.reduce((a, s) => a + (s.trimEnd !== null ? (s.trimEnd ?? 0) - s.trimStart : 0), 0) : 0;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-8 md:px-10">
+    <div className="mx-auto max-w-4xl px-5 py-8 md:px-10">
       <Link href="/projects" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> All recreations
       </Link>
@@ -169,61 +159,38 @@ export default function ProjectDetailPage() {
         </Button>
       </div>
 
-      {/* Workspace: Script / Editor tabs */}
+      {/* Workspace */}
       {isPlanned && timeline && (
         <div className="mb-6 rounded-2xl border border-border bg-card shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-3">
-            <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
-              <button onClick={() => setTab("editor")}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${tab === "editor" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                <Clapperboard className="h-4 w-4" /> Editor
-              </button>
-              <button onClick={() => setTab("script")}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${tab === "script" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                <FileText className="h-4 w-4" /> Script
-              </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+            <div>
+              <p className="font-semibold">New script</p>
+              <p className="text-xs text-muted-foreground">{timeline.segments.length} scenes · ~{formatTime(totalLen)} total</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground">{editedSegments.length} scenes · ~{formatTime(totalLen)}</span>
-              <Button size="sm" onClick={exportVideo} disabled={rendering || isBusy}>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setStudioOpen(true)}><Clapperboard className="h-4 w-4" /> Open editor</Button>
+              <Button variant="outline" onClick={() => exportSegments(timeline.segments)} disabled={rendering || isBusy}>
                 {rendering || isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                {isBusy ? "Exporting…" : "Export video"}
+                {isBusy ? "Exporting…" : "Export"}
               </Button>
             </div>
           </div>
-
-          <div className="p-4">
-            {tab === "editor" ? (
-              sourceDuration > 0 ? (
-                <TimelineEditor
-                  key={timelineKey}
-                  sourceVideoId={project.source_video_id}
-                  sourceDuration={sourceDuration}
-                  segments={timeline.segments}
-                  onChange={setEditedSegments}
-                />
-              ) : (
-                <p className="py-8 text-center text-sm text-muted-foreground">Loading source video…</p>
-              )
-            ) : (
-              <div className="space-y-3">
-                {timeline.segments.map((seg, i) => (
-                  <div key={i} className="rounded-xl border border-border p-3.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">
-                        <span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-[11px] font-bold tabular-nums text-primary">{i + 1}</span>
-                        {seg.sceneTitle || `Scene ${i + 1}`}
-                      </p>
-                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-                        {formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}
-                      </span>
-                    </div>
-                    {seg.newText && <p className="mt-2 text-sm leading-relaxed">{seg.newText}</p>}
-                    {seg.originalText && <p className="mt-1.5 line-clamp-2 text-xs italic text-muted-foreground/80">was: {seg.originalText}</p>}
-                  </div>
-                ))}
+          <div className="space-y-3 p-4">
+            {timeline.segments.map((seg, i) => (
+              <div key={i} className="rounded-xl border border-border p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">
+                    <span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-[11px] font-bold tabular-nums text-primary">{i + 1}</span>
+                    {seg.sceneTitle || `Scene ${i + 1}`}
+                  </p>
+                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                    {formatTime(seg.trimStart)}{seg.trimEnd !== null ? ` – ${formatTime(seg.trimEnd)}` : " – end"}
+                  </span>
+                </div>
+                {seg.newText && <p className="mt-2 text-sm leading-relaxed">{seg.newText}</p>}
+                {seg.originalText && <p className="mt-1.5 line-clamp-2 text-xs italic text-muted-foreground/80">was: {seg.originalText}</p>}
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}
@@ -239,6 +206,19 @@ export default function ProjectDetailPage() {
             </a>
           </div>
         </div>
+      )}
+
+      {/* Full-screen Studio */}
+      {studioOpen && timeline && sourceDuration > 0 && (
+        <Studio
+          projectName={project.name}
+          sourceVideoId={project.source_video_id}
+          sourceDuration={sourceDuration}
+          segments={timeline.segments}
+          exporting={rendering || isBusy}
+          onExport={exportSegments}
+          onClose={() => setStudioOpen(false)}
+        />
       )}
     </div>
   );
