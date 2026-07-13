@@ -132,6 +132,7 @@ function initSchema(db: any) {
   add("attempts", "attempts INTEGER DEFAULT 0");
   add("last_error", "last_error TEXT DEFAULT ''");
   add("updated_at", "updated_at TEXT DEFAULT (datetime('now'))");
+  add("niche_id", "niche_id TEXT DEFAULT ''");
 
   const jobCols = db.prepare("PRAGMA table_info(render_jobs)").all().map((c: { name: string }) => c.name);
   if (!jobCols.includes("attempts")) db.exec("ALTER TABLE render_jobs ADD COLUMN attempts INTEGER DEFAULT 0");
@@ -158,23 +159,32 @@ export interface VideoRow {
   download_status: string;
   attempts: number;
   last_error: string;
+  niche_id: string;
   created_at: string;
   updated_at: string;
 }
 
 export async function insertVideo(
-  v: Pick<VideoRow, "id" | "youtube_url" | "youtube_id" | "title" | "thumbnail_url">,
+  v: Pick<VideoRow, "id" | "youtube_url" | "youtube_id" | "title" | "thumbnail_url"> & { niche_id?: string },
 ): Promise<void> {
   const db = await getDb();
   db.prepare(
-    `INSERT INTO videos (id, youtube_url, youtube_id, title, thumbnail_url)
-     VALUES (@id, @youtube_url, @youtube_id, @title, @thumbnail_url)`,
-  ).run(v);
+    `INSERT INTO videos (id, youtube_url, youtube_id, title, thumbnail_url, niche_id)
+     VALUES (@id, @youtube_url, @youtube_id, @title, @thumbnail_url, @niche_id)`,
+  ).run({
+    id: v.id, youtube_url: v.youtube_url, youtube_id: v.youtube_id,
+    title: v.title, thumbnail_url: v.thumbnail_url, niche_id: v.niche_id ?? "",
+  });
 }
 
 export async function listVideos(): Promise<VideoRow[]> {
   const db = await getDb();
   return db.prepare("SELECT * FROM videos ORDER BY created_at DESC").all() as VideoRow[];
+}
+
+export async function listNicheVideos(nicheId: string): Promise<VideoRow[]> {
+  const db = await getDb();
+  return db.prepare("SELECT * FROM videos WHERE niche_id = ? ORDER BY created_at DESC").all(nicheId) as VideoRow[];
 }
 
 export async function getVideo(id: string): Promise<VideoRow | null> {
