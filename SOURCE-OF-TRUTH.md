@@ -93,9 +93,11 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
 
 - ✅ **v1** — collapse to single machine, fix render loop + download reliability, recreation mode, modern dashboard UI, timeline editor, Vibe-style Studio. (Done, live.)
 - ✅ **v2 Phase 1** — Niche container: niches + competitor channels + news sources. (Done, live 2026-07-13.)
-- ⬜ **v2 Phase 2** — **Spy + Scene index** (the core engine):
-  - Competitor spy: YouTube Data API → channel videos + stats. **Needs a YouTube Data API key.**
-  - Scene index: transcribe → shot-detect (PySceneDetect) → caption (self-hosted Florence-2/Moondream/BLIP or CLIP) → embed → vector DB.
+- 🟡 **v2 Phase 2** — **Spy + Scene index** (the core engine):
+  - ✅ **2a** — scene-index foundation: add competitor videos to a niche → ingest (transcript+download) → **keyword scene search** over transcript segments (exact timestamp + source). Done, live 2026-07-13.
+  - ⬜ **2b** — semantic (vector) scene search: embeddings + vector store.
+  - ⬜ **2c** — visual index: shot-detect (PySceneDetect) + self-hosted captions (Florence-2/Moondream/CLIP).
+  - ⬜ **2d** — competitor spy: YouTube Data API → auto-enumerate channel videos + stats. **Needs a YouTube Data API key.**
 - ⬜ **v2 Phase 3** — AI producer: rank daily video ideas from news + winning competitor topics.
 - ⬜ **v2 Phase 4** — wire producer → factory + **ElevenLabs voiceover** + scene matching from the index.
 - ⬜ **v2 Phase 5** — publishing (upload/schedule to your channels) + performance feedback loop.
@@ -143,6 +145,9 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (later)
+- **v2 Phase 2a shipped** — scene-index foundation. `videos` gained `niche_id`; new routes `/api/niches/[id]/videos` (add/list, reuses the ingest pipeline) and `/api/niches/[id]/scenes` (keyword search over transcript segments). Niche page now has "Competitor videos" (live indexing status) + "Scene index" search. Verified live: indexed a 15-min video, searched "college" → 12 exact-timestamp scenes, "death" → 6, "connecting the dots" → 1.
 
 ### 2026-07-13
 - **v2 Phase 1 shipped** — niche container (niches + competitor channels + news sources), new `Niches` nav, home → `/niches`, brand marked v2. Deployed to new isolated service `app-v2` (own volume, own DB). Verified live with the "UK royal family" niche (4 competitors, 2 RSS feeds). v1 confirmed still up and untouched.
