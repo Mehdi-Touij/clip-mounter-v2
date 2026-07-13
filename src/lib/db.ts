@@ -121,6 +121,20 @@ function initSchema(db: any) {
 
     CREATE INDEX IF NOT EXISTS idx_niche_channels_niche ON niche_channels(niche_id);
     CREATE INDEX IF NOT EXISTS idx_niche_sources_niche ON niche_sources(niche_id);
+
+    -- v2 Phase 2b: semantic scene index (one row per transcript scene + its embedding)
+    CREATE TABLE IF NOT EXISTS scenes (
+      id          TEXT PRIMARY KEY,
+      niche_id    TEXT NOT NULL,
+      video_id    TEXT NOT NULL,
+      start       REAL NOT NULL,
+      end         REAL NOT NULL,
+      text        TEXT NOT NULL,
+      embedding   TEXT NOT NULL,   -- JSON array of floats (normalized)
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_scenes_niche ON scenes(niche_id);
+    CREATE INDEX IF NOT EXISTS idx_scenes_video ON scenes(video_id);
   `);
 
   // Lightweight migration for older DBs that predate the new columns.
@@ -133,6 +147,7 @@ function initSchema(db: any) {
   add("last_error", "last_error TEXT DEFAULT ''");
   add("updated_at", "updated_at TEXT DEFAULT (datetime('now'))");
   add("niche_id", "niche_id TEXT DEFAULT ''");
+  add("scenes_indexed", "scenes_indexed INTEGER DEFAULT 0");
 
   const jobCols = db.prepare("PRAGMA table_info(render_jobs)").all().map((c: { name: string }) => c.name);
   if (!jobCols.includes("attempts")) db.exec("ALTER TABLE render_jobs ADD COLUMN attempts INTEGER DEFAULT 0");
@@ -421,4 +436,48 @@ export async function addSource(nicheId: string, type: string, url: string, titl
 export async function deleteSource(id: string): Promise<void> {
   const db = await getDb();
   db.prepare("DELETE FROM niche_sources WHERE id = ?").run(id);
+}
+
+// --- scenes (semantic index) ---
+
+export interface SceneRow {
+  id: string; niche_id: string; video_id: string; start: number; end: number; text: string; embedding: string;
+}
+
+/** Niche videos that are transcribed but not yet scene-indexed. */
+export async function listVideosNeedingSceneIndex(): Promise<VideoRow[]> {
+  const db = await getDb();
+  return db
+    .prepare("SELECT * FROM videos WHERE niche_id != '' AND transcript_status = 'done' AND scenes_indexed = 0 AND transcript_json != ''")
+    .all() as VideoRow[];
+}
+
+export async function insertScenes(nicheId: string, videoId: string, rows: { start: number; end: number; text: string; embedding: number[] }[]): Promise<void> {
+  const db = await getDb();
+  const { randomUUID } = await import("crypto");
+  const stmt = db.prepare("INSERT INTO scenes (id, niche_id, video_id, start, end, text, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  const tx = db.transaction((items: typeof rows) => {
+    for (const r of items) stmt.run(randomUUID(), nicheId, videoId, r.start, r.end, r.text, JSON.stringify(r.embedding));
+  });
+  tx(rows);
+}
+
+export async function markVideoScenesIndexed(videoId: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("UPDATE videos SET scenes_indexed = 1 WHERE id = ?").run(videoId);
+}
+
+export async function deleteScenesForVideo(videoId: string): Promise<void> {
+  const db = await getDb();
+  db.prepare("DELETE FROM scenes WHERE video_id = ?").run(videoId);
+}
+
+/** All scenes of a niche joined with their video title/channel (for search ranking). */
+export async function listNicheSceneRows(nicheId: string): Promise<Array<SceneRow & { video_title: string; channel: string }>> {
+  const db = await getDb();
+  return db
+    .prepare(`SELECT s.*, v.title AS video_title, v.channel AS channel
+              FROM scenes s JOIN videos v ON v.id = s.video_id
+              WHERE s.niche_id = ?`)
+    .all(nicheId) as Array<SceneRow & { video_title: string; channel: string }>;
 }

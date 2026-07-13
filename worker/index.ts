@@ -16,8 +16,12 @@ import {
   claimNextRenderJob,
   completeRenderJob,
   recoverStuckJobs,
+  listVideosNeedingSceneIndex,
+  insertScenes,
+  markVideoScenesIndexed,
   type VideoRow,
 } from "../src/lib/db";
+import { embedBatch } from "../src/lib/embeddings";
 import type { Timeline } from "../src/lib/types";
 
 const PYTHON = process.env.PYTHON ?? "python3";
@@ -239,12 +243,55 @@ async function renderLoop() {
   }
 }
 
+// === Scene index (semantic) ===
+
+interface Seg { start: number; end: number; text: string }
+
+/** Merge tiny transcript cues into ~10s / ~220-char scenes — meatier units for embedding. */
+function chunkScenes(segs: Seg[]): Seg[] {
+  const out: Seg[] = [];
+  let cur: Seg | null = null;
+  for (const s of segs) {
+    const text = (s.text || "").trim();
+    if (!text) continue;
+    if (!cur) cur = { start: s.start, end: s.end, text };
+    else { cur.end = s.end; cur.text += " " + text; }
+    if (cur.end - cur.start >= 10 || cur.text.length >= 220) { out.push(cur); cur = null; }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+async function sceneIndexLoop() {
+  for (;;) {
+    try {
+      const videos = await listVideosNeedingSceneIndex();
+      for (const v of videos) {
+        let segs: Seg[] = [];
+        try { segs = JSON.parse(v.transcript_json) as Seg[]; } catch { await markVideoScenesIndexed(v.id); continue; }
+        const chunks = chunkScenes(segs);
+        if (chunks.length === 0) { await markVideoScenesIndexed(v.id); continue; }
+        log(`[scenes] embedding ${chunks.length} scenes for ${v.youtube_id}`);
+        // Embed in small sub-batches to keep memory bounded.
+        for (let i = 0; i < chunks.length; i += 16) {
+          const slice = chunks.slice(i, i + 16);
+          const embs = await embedBatch(slice.map((c) => c.text));
+          await insertScenes(v.niche_id, v.id, slice.map((c, j) => ({ start: c.start, end: c.end, text: c.text, embedding: embs[j] })));
+        }
+        await markVideoScenesIndexed(v.id);
+        log(`[scenes] ✓ indexed ${v.youtube_id}`);
+      }
+    } catch (e) { log("[scenes] loop error:", (e as Error).message); }
+    await sleep(POLL_MS);
+  }
+}
+
 async function main() {
   await getDb();
   fs.mkdirSync(TMP_ROOT, { recursive: true });
   const recovered = await recoverStuckJobs();
   log(`[worker] started. data=${PATHS.dataDir} python=${PYTHON} recovered ${recovered} stuck job(s)`);
-  await Promise.all([ingestLoop(), renderLoop()]);
+  await Promise.all([ingestLoop(), renderLoop(), sceneIndexLoop()]);
 }
 
 main().catch((e) => { console.error("[worker] fatal:", e); process.exit(1); });
