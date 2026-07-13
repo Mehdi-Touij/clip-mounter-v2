@@ -95,7 +95,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
 - ✅ **v2 Phase 1** — Niche container: niches + competitor channels + news sources. (Done, live 2026-07-13.)
 - 🟡 **v2 Phase 2** — **Spy + Scene index** (the core engine):
   - ✅ **2a** — scene-index foundation: add competitor videos to a niche → ingest (transcript+download) → **keyword scene search** over transcript segments (exact timestamp + source). Done, live 2026-07-13.
-  - ⬜ **2b** — semantic (vector) scene search: embeddings + vector store.
+  - ✅ **2b** — semantic (vector) scene search: local Transformers.js embeddings (all-MiniLM-L6-v2, 384-dim, WASM, cached on volume) → `scenes` table → cosine ranking. Done, live 2026-07-13.
   - ⬜ **2c** — visual index: shot-detect (PySceneDetect) + self-hosted captions (Florence-2/Moondream/CLIP).
   - ⬜ **2d** — competitor spy: YouTube Data API → auto-enumerate channel videos + stats. **Needs a YouTube Data API key.**
 - ⬜ **v2 Phase 3** — AI producer: rank daily video ideas from news + winning competitor topics.
@@ -145,6 +145,9 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (later still)
+- **v2 Phase 2b shipped** — semantic scene search. Added `@huggingface/transformers` (all-MiniLM-L6-v2, WASM, model cached to `/data/models`); `src/lib/embeddings.ts`; `scenes` table + worker `sceneIndexLoop` (chunk ~10s → embed → store). `/api/niches/[id]/scenes` ranks by cosine similarity (keyword fallback while indexing). **Ollama Cloud does NOT serve embeddings** (unauthorized) — so embeddings are fully local/free. Verified live: keyword-free queries returned the semantically-correct moments (e.g. "life is short so pursue what matters" → "Your time is limited…").
 
 ### 2026-07-13 (later)
 - **v2 Phase 2a shipped** — scene-index foundation. `videos` gained `niche_id`; new routes `/api/niches/[id]/videos` (add/list, reuses the ingest pipeline) and `/api/niches/[id]/scenes` (keyword search over transcript segments). Niche page now has "Competitor videos" (live indexing status) + "Scene index" search. Verified live: indexed a 15-min video, searched "college" → 12 exact-timestamp scenes, "death" → 6, "connecting the dots" → 1.
