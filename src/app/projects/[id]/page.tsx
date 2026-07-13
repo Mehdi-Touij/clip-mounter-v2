@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Sparkles, Play, Download, Film, Clapperboard } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Play, Download, Film, Clapperboard, Upload, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,7 +24,10 @@ interface Project {
   timeline_json: string | null;
   output_path: string | null;
   error: string | null;
+  publish_json: string | null;
 }
+
+interface Publish { title?: string; description?: string; tags?: string[]; status?: string; scheduledAt?: string }
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -52,12 +55,15 @@ export default function ProjectDetailPage() {
   const [studioOpen, setStudioOpen] = useState(false);
   const [recreating, setRecreating] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [publish, setPublish] = useState<Publish | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
 
   const fetchProject = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${id}`);
       const data = await res.json();
       setProject(data.project);
+      if (data.project?.publish_json) { try { setPublish(JSON.parse(data.project.publish_json)); } catch {} }
       if (data.project?.timeline_json) setTimeline(JSON.parse(data.project.timeline_json) as Timeline);
       if (data.project?.source_video_id) {
         const vr = await fetch(`/api/videos/${data.project.source_video_id}`);
@@ -106,6 +112,23 @@ export default function ProjectDetailPage() {
       setStudioOpen(false);
       fetchProject();
     } finally { setRendering(false); }
+  };
+
+  const generateMeta = async () => {
+    setMetaLoading(true);
+    try {
+      const r = await fetch(`/api/projects/${id}/metadata`, { method: "POST" });
+      const d = await r.json();
+      if (d.publish) setPublish(d.publish); else alert(d.error ?? "Could not generate metadata.");
+    } finally { setMetaLoading(false); }
+  };
+
+  const savePublish = async (patch: Partial<Publish>) => {
+    const next = { ...(publish ?? {}), ...patch };
+    setPublish(next);
+    await fetch(`/api/projects/${id}/publish`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    });
   };
 
   if (!project) {
@@ -213,6 +236,58 @@ export default function ProjectDetailPage() {
               <Button variant="outline"><Download className="h-4 w-4" /> Download MP4</Button>
             </a>
           </div>
+        </div>
+      )}
+
+      {/* Publish */}
+      {isDone && (
+        <div className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary"><Upload className="h-4 w-4" /></span>
+            <div>
+              <p className="text-sm font-semibold">Publish</p>
+              <p className="text-xs text-muted-foreground">AI-optimized title, description, and tags — ready for YouTube.</p>
+            </div>
+            {publish?.title && <span className="ml-auto"><StatusPill tone={publish.status === "scheduled" ? "blue" : "violet"}>{publish.status ?? "ready"}</StatusPill></span>}
+          </div>
+
+          {!publish?.title ? (
+            <Button onClick={generateMeta} disabled={metaLoading}>
+              {metaLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {metaLoading ? "Writing…" : "Generate SEO metadata"}
+            </Button>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Title</label>
+                <input className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                  value={publish.title} onChange={(e) => setPublish({ ...publish, title: e.target.value })} onBlur={(e) => savePublish({ title: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
+                <Textarea rows={4} value={publish.description ?? ""} onChange={(e) => setPublish({ ...publish, description: e.target.value })} onBlur={(e) => savePublish({ description: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Tags</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(publish.tags ?? []).map((t, i) => <span key={i} className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">{t}</span>)}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Schedule</label>
+                  <input type="datetime-local" className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                    value={publish.scheduledAt ?? ""} onChange={(e) => savePublish({ scheduledAt: e.target.value, status: "scheduled" })} />
+                </div>
+                <Button variant="outline" size="sm" onClick={generateMeta} disabled={metaLoading}>
+                  {metaLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Regenerate
+                </Button>
+              </div>
+              <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                <Upload className="mr-1 inline h-3.5 w-3.5" /> Auto-upload to your YouTube channel is the next step — it needs a one-time YouTube account connection (OAuth). Until then, download the MP4 and upload with this title/description/tags.
+              </div>
+            </div>
+          )}
         </div>
       )}
 

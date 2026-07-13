@@ -68,6 +68,7 @@ function initSchema(db: any) {
       timeline_json   TEXT,
       output_path     TEXT,
       error           TEXT,
+      publish_json    TEXT DEFAULT '',   -- {title, description, tags[], status, scheduledAt, publishedUrl}
       created_at      TEXT DEFAULT (datetime('now'))
     );
 
@@ -202,6 +203,7 @@ function initSchema(db: any) {
 
   const projCols = db.prepare("PRAGMA table_info(projects)").all().map((c: { name: string }) => c.name);
   if (!projCols.includes("source_video_id")) db.exec("ALTER TABLE projects ADD COLUMN source_video_id TEXT DEFAULT ''");
+  if (!projCols.includes("publish_json")) db.exec("ALTER TABLE projects ADD COLUMN publish_json TEXT DEFAULT ''");
 
   const ideaTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='video_ideas'").get();
   if (ideaTable) {
@@ -304,6 +306,7 @@ export interface ProjectRow {
   timeline_json: string | null;
   output_path: string | null;
   error: string | null;
+  publish_json: string | null;
   created_at: string;
 }
 
