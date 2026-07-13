@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs";
 import * as path from "path";
-import { getVideo, deleteVideo, PATHS } from "@/lib/db";
+import { getVideo, deleteVideo, deleteScenesForVideo, PATHS } from "@/lib/db";
 
 export async function GET(
   _req: NextRequest,
@@ -21,6 +21,7 @@ export async function DELETE(
 ) {
   const { id } = await params;
   const video = await getVideo(id);
+  await deleteScenesForVideo(id);
   await deleteVideo(id);
   // Best-effort cleanup of the downloaded file.
   if (video?.storage_path) {

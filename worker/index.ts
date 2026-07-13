@@ -22,6 +22,7 @@ import {
   type VideoRow,
 } from "../src/lib/db";
 import { embedBatch } from "../src/lib/embeddings";
+import { caption, captionEnabled } from "../src/lib/vision";
 import { synthesize, ttsEnabled } from "../src/lib/tts";
 import type { Timeline } from "../src/lib/types";
 
@@ -295,12 +296,33 @@ async function sceneIndexLoop() {
         try { segs = JSON.parse(v.transcript_json) as Seg[]; } catch { await markVideoScenesIndexed(v.id); continue; }
         const chunks = chunkScenes(segs);
         if (chunks.length === 0) { await markVideoScenesIndexed(v.id); continue; }
-        log(`[scenes] embedding ${chunks.length} scenes for ${v.youtube_id}`);
-        // Embed in small sub-batches to keep memory bounded.
+        const src = path.join(PATHS.videosDir, `${v.id}.mp4`);
+        const canCaption = captionEnabled() && fs.existsSync(src);
+        log(`[scenes] indexing ${chunks.length} scenes for ${v.youtube_id}${canCaption ? " (+visual)" : ""}`);
+
+        // Visual caption per scene: a keyframe at the scene midpoint → "what's shown".
+        const captions: string[] = [];
+        for (let ci = 0; ci < chunks.length; ci++) {
+          let cap = "";
+          if (canCaption) {
+            const framePath = path.join(TMP_ROOT, `kf-${v.id}-${ci}.jpg`);
+            try {
+              const mid = (chunks[ci].start + chunks[ci].end) / 2;
+              await runCmd("ffmpeg", ["-y", "-ss", String(mid), "-i", src, "-frames:v", "1", "-q:v", "3", framePath], 60);
+              cap = await caption(framePath);
+            } catch { /* caption is optional */ }
+            finally { try { fs.rmSync(framePath, { force: true }); } catch {} }
+          }
+          captions.push(cap);
+        }
+
+        // Embed the combined (spoken + shown) text so matching uses both.
         for (let i = 0; i < chunks.length; i += 16) {
           const slice = chunks.slice(i, i + 16);
-          const embs = await embedBatch(slice.map((c) => c.text));
-          await insertScenes(v.niche_id, v.id, slice.map((c, j) => ({ start: c.start, end: c.end, text: c.text, embedding: embs[j] })));
+          const capSlice = captions.slice(i, i + 16);
+          const combined = slice.map((c, j) => (capSlice[j] ? `${c.text} [shows: ${capSlice[j]}]` : c.text));
+          const embs = await embedBatch(combined);
+          await insertScenes(v.niche_id, v.id, slice.map((c, j) => ({ start: c.start, end: c.end, text: c.text, visualCaption: capSlice[j], embedding: embs[j] })));
         }
         await markVideoScenesIndexed(v.id);
         log(`[scenes] ✓ indexed ${v.youtube_id}`);

@@ -128,11 +128,12 @@ function initSchema(db: any) {
       id          TEXT PRIMARY KEY,
       niche_id    TEXT NOT NULL,
       video_id    TEXT NOT NULL,
-      start       REAL NOT NULL,
-      end         REAL NOT NULL,
-      text        TEXT NOT NULL,
-      embedding   TEXT NOT NULL,   -- JSON array of floats (normalized)
-      created_at  TEXT DEFAULT (datetime('now'))
+      start          REAL NOT NULL,
+      end            REAL NOT NULL,
+      text           TEXT NOT NULL,
+      visual_caption TEXT DEFAULT '',
+      embedding      TEXT NOT NULL,   -- JSON array of floats (normalized)
+      created_at     TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_scenes_niche ON scenes(niche_id);
     CREATE INDEX IF NOT EXISTS idx_scenes_video ON scenes(video_id);
@@ -209,6 +210,11 @@ function initSchema(db: any) {
   if (ideaTable) {
     const ideaCols = db.prepare("PRAGMA table_info(video_ideas)").all().map((c: { name: string }) => c.name);
     if (!ideaCols.includes("project_id")) db.exec("ALTER TABLE video_ideas ADD COLUMN project_id TEXT DEFAULT ''");
+  }
+  const sceneTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='scenes'").get();
+  if (sceneTable) {
+    const sceneCols = db.prepare("PRAGMA table_info(scenes)").all().map((c: { name: string }) => c.name);
+    if (!sceneCols.includes("visual_caption")) db.exec("ALTER TABLE scenes ADD COLUMN visual_caption TEXT DEFAULT ''");
   }
 }
 
@@ -508,14 +514,22 @@ export async function listVideosNeedingSceneIndex(): Promise<VideoRow[]> {
     .all() as VideoRow[];
 }
 
-export async function insertScenes(nicheId: string, videoId: string, rows: { start: number; end: number; text: string; embedding: number[] }[]): Promise<void> {
+export async function insertScenes(nicheId: string, videoId: string, rows: { start: number; end: number; text: string; visualCaption?: string; embedding: number[] }[]): Promise<void> {
   const db = await getDb();
   const { randomUUID } = await import("crypto");
-  const stmt = db.prepare("INSERT INTO scenes (id, niche_id, video_id, start, end, text, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  const stmt = db.prepare("INSERT INTO scenes (id, niche_id, video_id, start, end, text, visual_caption, embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   const tx = db.transaction((items: typeof rows) => {
-    for (const r of items) stmt.run(randomUUID(), nicheId, videoId, r.start, r.end, r.text, JSON.stringify(r.embedding));
+    for (const r of items) stmt.run(randomUUID(), nicheId, videoId, r.start, r.end, r.text, r.visualCaption ?? "", JSON.stringify(r.embedding));
   });
   tx(rows);
+}
+
+/** Force re-indexing of a niche's scenes (e.g. after enabling the visual index). */
+export async function reindexNiche(nicheId: string): Promise<number> {
+  const db = await getDb();
+  db.prepare("DELETE FROM scenes WHERE niche_id = ?").run(nicheId);
+  const res = db.prepare("UPDATE videos SET scenes_indexed = 0 WHERE niche_id = ? AND transcript_status = 'done'").run(nicheId);
+  return res.changes as number;
 }
 
 export async function markVideoScenesIndexed(videoId: string): Promise<void> {
