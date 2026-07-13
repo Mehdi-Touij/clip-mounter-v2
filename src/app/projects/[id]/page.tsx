@@ -199,7 +199,7 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-muted-foreground">{timeline.segments.length} scenes · ~{formatTime(totalLen)} total</p>
             </div>
             <div className="flex items-center gap-2">
-              {!isAssembled && <Button onClick={() => setStudioOpen(true)}><Clapperboard className="h-4 w-4" /> Open editor</Button>}
+              <Button onClick={() => setStudioOpen(true)}><Clapperboard className="h-4 w-4" /> Open editor</Button>
               <Button variant="outline" onClick={() => exportSegments(timeline.segments)} disabled={rendering || isBusy}>
                 {rendering || isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 {isBusy ? "Exporting…" : "Export"}
@@ -292,11 +292,11 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Full-screen Studio */}
-      {studioOpen && timeline && sourceDuration > 0 && (
+      {studioOpen && timeline && timeline.segments.length > 0 && (
         <Studio
           projectName={project.name}
-          sourceVideoId={project.source_video_id}
-          sourceDuration={sourceDuration}
+          sourceVideoId={project.source_video_id || timeline.segments[0].videoId}
+          sourceDuration={sourceDuration || 3600}
           segments={timeline.segments}
           exporting={rendering || isBusy}
           onExport={exportSegments}

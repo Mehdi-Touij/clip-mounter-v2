@@ -55,9 +55,16 @@ export function Studio({ projectName, sourceVideoId, sourceDuration, segments, e
   const [playhead, setPlayhead] = useState(0);
   const [pxPerSec, setPxPerSec] = useState(12);
 
+  // Multi-source preview: the <video> src follows the active segment's source clip.
+  const initialVid = segments[0]?.videoId ?? sourceVideoId;
+  const [activeVideoId, setActiveVideoIdState] = useState(initialVid);
+  const activeVideoIdRef = useRef(initialVid);
+  const setActive = (id: string) => { activeVideoIdRef.current = id; setActiveVideoIdState(id); };
+
   const dragRef = useRef<Drag>(null);
   const curIndex = useRef(0);
   const pendingSeek = useRef<number | null>(null);
+  const pendingPlay = useRef(false);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -83,6 +90,8 @@ export function Studio({ projectName, sourceVideoId, sourceDuration, segments, e
   const tick = useCallback(() => {
     const v = videoRef.current; if (!v) return;
     const seg = segs[curIndex.current]; if (!seg) { pause(); return; }
+    // Wait for a pending source switch to finish loading before reading time.
+    if ((seg.videoId ?? activeVideoIdRef.current) !== activeVideoIdRef.current) { rafRef.current = requestAnimationFrame(tick); return; }
     if (pendingSeek.current !== null) {
       if (Math.abs(v.currentTime - pendingSeek.current) < 0.3) pendingSeek.current = null;
       else { rafRef.current = requestAnimationFrame(tick); return; }
@@ -91,32 +100,66 @@ export function Studio({ projectName, sourceVideoId, sourceDuration, segments, e
     if (st >= end - 0.04) {
       const ni = curIndex.current + 1;
       if (ni >= segs.length) { pause(); setPlayhead(total); return; }
-      curIndex.current = ni; const target = segs[ni].trimStart; v.currentTime = target; pendingSeek.current = target;
+      curIndex.current = ni;
+      const target = segs[ni].trimStart;
+      if (segs[ni].videoId !== activeVideoIdRef.current) {
+        // next scene is a different source clip → swap src; resumes via onCanPlay
+        pendingSeek.current = target; pendingPlay.current = true; setActive(segs[ni].videoId);
+        return;
+      }
+      v.currentTime = target; pendingSeek.current = target;
       rafRef.current = requestAnimationFrame(tick); return;
     }
     setPlayhead(cum[curIndex.current] + Math.max(0, st - seg.trimStart));
     rafRef.current = requestAnimationFrame(tick);
   }, [segs, cum, total, sourceDuration, pause]);
 
+  const startPlayback = useCallback(() => {
+    const v = videoRef.current; if (!v) return;
+    v.play().then(() => { setPlaying(true); stopRaf(); rafRef.current = requestAnimationFrame(tick); }).catch(() => {});
+  }, [tick]);
+
+  // Point the preview at segment `index` at `srcTime`, switching source clip if needed.
+  const goTo = useCallback((index: number, srcTime: number, autoplay: boolean) => {
+    const v = videoRef.current; if (!v || !segs[index]) return;
+    curIndex.current = index;
+    const vid = segs[index].videoId;
+    if (vid && vid !== activeVideoIdRef.current) {
+      pendingSeek.current = srcTime; pendingPlay.current = autoplay; setActive(vid);
+    } else {
+      v.currentTime = srcTime; pendingSeek.current = srcTime;
+      if (autoplay) { if (v.readyState >= 2) startPlayback(); else v.addEventListener("canplay", startPlayback, { once: true }); }
+    }
+  }, [segs, startPlayback]);
+
   const play = useCallback(() => {
-    const v = videoRef.current; if (!v || segs.length === 0) return;
+    if (segs.length === 0) return;
     const { index, src } = mapOut(playhead >= total ? 0 : playhead);
-    curIndex.current = index; v.currentTime = src; pendingSeek.current = src;
-    const start = () => v.play().then(() => { setPlaying(true); stopRaf(); rafRef.current = requestAnimationFrame(tick); }).catch(() => {});
-    if (v.readyState >= 2) start(); else v.addEventListener("canplay", start, { once: true });
-  }, [segs, playhead, total, mapOut, tick]);
+    goTo(index, src, true);
+  }, [segs, playhead, total, mapOut, goTo]);
 
   const scrub = useCallback((out: number) => {
-    const v = videoRef.current; const { index, src } = mapOut(out);
-    curIndex.current = index; if (v) { v.currentTime = src; pendingSeek.current = src; }
+    const { index, src } = mapOut(out);
+    goTo(index, src, playing);
     setPlayhead(Math.max(0, Math.min(out, total)));
-  }, [mapOut, total]);
+  }, [mapOut, total, goTo, playing]);
+
+  // Fires after a source-clip src change loads → apply the queued seek / play.
+  const onCanPlay = useCallback(() => {
+    setReady(true);
+    const v = videoRef.current; if (!v) return;
+    if (pendingSeek.current !== null) v.currentTime = pendingSeek.current;
+    if (pendingPlay.current) { pendingPlay.current = false; startPlayback(); }
+  }, [startPlayback]);
 
   const onMeta = useCallback(() => {
     const v = videoRef.current; if (!v) return;
     setReady(v.readyState >= 2);
-    if (!playing) { const { index, src } = mapOut(playhead); curIndex.current = index; v.currentTime = src; pendingSeek.current = src; }
-  }, [mapOut, playhead, playing]);
+    if (!playing && !pendingPlay.current) {
+      const { index, src } = mapOut(playhead);
+      if (segs[index]?.videoId === activeVideoIdRef.current) { curIndex.current = index; v.currentTime = src; pendingSeek.current = src; }
+    }
+  }, [mapOut, playhead, playing, segs]);
 
   useEffect(() => () => stopRaf(), []);
 
@@ -273,8 +316,8 @@ export function Studio({ projectName, sourceVideoId, sourceDuration, segments, e
         {/* Preview */}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-zinc-900/40 p-6">
           <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black" style={{ aspectRatio: "9 / 16", height: "min(62vh, 560px)" }}>
-            <video ref={videoRef} src={`/api/videos/${sourceVideoId}/file`} className="h-full w-full object-contain"
-              playsInline preload="auto" onLoadedMetadata={onMeta} onCanPlay={() => setReady(true)} onEnded={() => pause()} />
+            <video ref={videoRef} src={`/api/videos/${activeVideoId}/file`} className="h-full w-full object-contain"
+              playsInline preload="auto" onLoadedMetadata={onMeta} onCanPlay={onCanPlay} onEnded={() => pause()} />
             {!ready && <div className="absolute inset-0 grid place-items-center bg-black/50"><span className="flex items-center gap-2 text-xs text-white/80"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</span></div>}
             {sel?.sceneTitle && <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 text-center text-sm font-medium">{sel.sceneTitle}</div>}
           </div>
