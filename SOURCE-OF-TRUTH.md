@@ -101,7 +101,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
 - 🟡 **v2 Phase 3** — AI producer:
   - ✅ **3a+3b** — RSS news ingestion + producer ranks daily video ideas from news + competitor top performers (LLM). Done, live 2026-07-13.
   - ✅ **3c** — assemble: idea → AI script → each beat matched to the best downloaded scene (semantic) → multi-source timeline → project → auto-render. Done, live 2026-07-13. (Match quality scales with how much of the library is indexed.)
-- ⬜ **v2 Phase 4** — wire producer → factory + **ElevenLabs voiceover** + scene matching from the index.
+- ✅ **v2 Phase 4** — ElevenLabs voiceover: assembled videos narrate the AI script over matched footage (per-scene TTS, footage looped to narration length; original-audio fallback on TTS error). Swappable provider (`src/lib/tts.ts`) → self-hosted Kokoro can replace it later. Done, live 2026-07-13.
 - ⬜ **v2 Phase 5** — publishing (upload/schedule to your channels) + performance feedback loop.
 
 ---
@@ -110,6 +110,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
 
 - **OLLAMA_API_KEY** is set in Railway env for both `app-gh` and `app-v2`. Not in the repo.
 - **YT_API_KEY** (YouTube Data API v3) is set in `app-v2` Railway env. Free, 10k units/day. `youtube.ts` uses only cheap endpoints (channels/playlistItems/videos.list ≈ 4 units/channel) — **never `search.list`** (100 units).
+- **ELEVENLABS_API_KEY** is set in `app-v2` env (free tier: ~10k chars/mo, no commercial rights — testing only; upgrade to Starter $5/mo for commercial). Optional `ELEVEN_VOICE_ID` / `ELEVEN_MODEL` (default `eleven_flash_v2_5`). For free-at-scale later: swap `src/lib/tts.ts` to self-hosted Kokoro.
 - **Downloads:** direct `yt-dlp` from the server IP works surprisingly well even on Railway datacenter IPs (verified). If bot-walled at scale, drop a real `youtube-cookies.txt` (git-ignored, mounted read-only). No proxies.
 - **Browser video preview:** the source MP4 loads fine (faststart H.264+AAC). Early "black preview" was **timing** (clicked Play before buffering) — fixed with first-frame seek + canplay guard. Detached `<video>` elements don't load media in Chrome (misleading when debugging).
 - **Railway gotchas:** (1) Dockerfile **`VOLUME` instruction is rejected** — removed it; volumes are external. (2) `railway up` (CLI upload) failed silently at "scheduling build" — use the **GitHub integration** (`railway add --repo --branch`) instead. (3) `--ci` isn't the culprit; CLI-upload path itself was.
@@ -147,6 +148,9 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (late night 2) — VOICEOVER
+- **v2 Phase 4 shipped** — ElevenLabs voiceover. `src/lib/tts.ts` (ElevenLabs flash v2.5, swappable); `Timeline.voiceover` flag (assembled = true); worker render voiceover branch: per scene → silent scaled footage looped to the narration + AI voice on top (`-stream_loop -1 … -shortest`), original-audio fallback on TTS error. `ELEVENLABS_API_KEY` in `app-v2` env (free tier ~10k chars/mo ≈ dozens of test videos). Verified live: assembled royal idea → worker logged `voiced 1/6 … 6/6` → 43.7s MP4 whose length is paced by the narration.
 
 ### 2026-07-13 (late night) — FULL LOOP CLOSED
 - **v2 Phase 3c shipped** — assembly. `/api/niches/[id]/ideas/[ideaId]/assemble`: LLM writes a script → each beat matched to the best unused downloaded scene (semantic) → multi-source timeline → project created + auto-rendered. `video_ideas.project_id` (+migration); `listNicheSceneRows` returns `download_status`/`youtube_url`; project page detects multi-source (assembled) and shows review+Export (hides single-source Studio/Recreate). Producer page: Assemble → rendering project → "Open video".
