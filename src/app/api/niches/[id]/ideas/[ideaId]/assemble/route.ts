@@ -71,7 +71,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     segments.push({
       videoId: best.video_id, youtubeUrl: best.youtube_url,
       trimStart: best.start, trimEnd,
-      sceneTitle: `Beat ${i + 1}`, newText: beats[i], originalText: best.text,
+      sceneTitle: `Beat ${i + 1}`, newText: beats[i],
+      originalText: best.visual_caption ? `${best.text} · [shows: ${best.visual_caption}]` : best.text,
     });
   }
   if (segments.length === 0) return NextResponse.json({ error: "No scenes matched the script. Index more videos." }, { status: 422 });

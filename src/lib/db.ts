@@ -503,7 +503,7 @@ export async function deleteSource(id: string): Promise<void> {
 // --- scenes (semantic index) ---
 
 export interface SceneRow {
-  id: string; niche_id: string; video_id: string; start: number; end: number; text: string; embedding: string;
+  id: string; niche_id: string; video_id: string; start: number; end: number; text: string; visual_caption: string; embedding: string;
 }
 
 /** Niche videos that are transcribed but not yet scene-indexed. */
