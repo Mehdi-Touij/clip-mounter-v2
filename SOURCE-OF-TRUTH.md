@@ -152,6 +152,12 @@ curl -s <URL>/api/videos            # v1/v2 library
 
 ## 9. Build log (append newest at top)
 
+### 2026-07-13 (late night 5) — CURATION + MULTI-SOURCE EDITOR
+- **Event-level curation** (assemble): rank niche videos by relevance to the idea, draw scenes only from the top 4 → footage is now on-topic/coherent (verified: a "Charles 9/11 tribute" video used only 3 same-event clips vs scattered before). Per-beat precision still limited by the weak free captioner (vit-gpt2 hallucinates "cell phone" etc.) — a better vision model (Florence-2 / cheap Gemini vision) is the future precision lever.
+- **Multi-source Studio**: the editor now opens on assembled (multi-source) videos — preview follows each scene's own source clip (swaps `<video>` src, resumes on canplay). Editing (reorder/trim/split/delete/export) verified working; recreation single-source path unchanged.
+- **/file endpoint**: serve bounded ≤1MB buffered ranges (was open Readable.toWeb stream). 
+- **KNOWN ISSUE (likely test-env only):** the live editor preview stalls at readyState 0 in the Claude-in-Chrome automated browser — but `fetch` of the file works, the endpoint returns correct `206`, the file is valid faststart H.264, and even Chrome's native player stalls *only in that MCP browser* (which filters traffic). **Needs verification in a normal browser** — editing + final render are unaffected.
+
 ### 2026-07-13 (late night 4) — VISUAL INDEX + QUALITY
 - **Quality test** on the 11-video index revealed the honest gap: script/voice/SEO are production-quality, but **footage matching was loose** (abstract narration beats grabbed off-topic clips, incl. the off-niche Jobs test video). Cause: transcript-only matching + index pollution.
 - **v2 Phase 2c shipped** — visual scene index. `src/lib/vision.ts` (Transformers.js vit-gpt2 image captioning, WASM; blip repos were access-blocked); `scenes.visual_caption` (+migration); worker scene step extracts a keyframe per scene → captions it → embeds `spoken + [shows: caption]`. `reindexNiche` + `/api/niches/[id]/reindex`; video delete now clears scenes; `sharp` added. Cleaned the royal niche (removed Jobs video). Captioning confirmed working live (worker logs `(+visual)`, clean `✓ indexed`). Backfill is slow on CPU (background job).
