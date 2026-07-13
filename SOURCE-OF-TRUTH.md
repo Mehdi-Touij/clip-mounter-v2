@@ -102,7 +102,10 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
   - ✅ **3a+3b** — RSS news ingestion + producer ranks daily video ideas from news + competitor top performers (LLM). Done, live 2026-07-13.
   - ✅ **3c** — assemble: idea → AI script → each beat matched to the best downloaded scene (semantic) → multi-source timeline → project → auto-render. Done, live 2026-07-13. (Match quality scales with how much of the library is indexed.)
 - ✅ **v2 Phase 4** — ElevenLabs voiceover: assembled videos narrate the AI script over matched footage (per-scene TTS, footage looped to narration length; original-audio fallback on TTS error). Swappable provider (`src/lib/tts.ts`) → self-hosted Kokoro can replace it later. Done, live 2026-07-13.
-- ⬜ **v2 Phase 5** — publishing (upload/schedule to your channels) + performance feedback loop.
+- 🟡 **v2 Phase 5** — publishing:
+  - ✅ **5a** — publish-prep: AI SEO title/description/tags (`/metadata`) + edit/schedule (`/publish`); Publish panel on finished videos. Done, live 2026-07-13.
+  - ⬜ **5b** — YouTube OAuth upload (per-channel auth). Caveats: unverified apps upload **private** until Google audit; upload quota ~1600 units ≈ **~6/day** free.
+  - ⬜ **5c** — performance feedback loop (re-poll our uploads' stats → feed the producer).
 
 ---
 
@@ -148,6 +151,9 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (late night 3) — PUBLISH PREP
+- **v2 Phase 5a shipped** — publish-prep. `projects.publish_json` (+migration); routes `/metadata` (AI SEO title+description+tags from the video's narration) and `/publish` (save edits/schedule/status); Publish panel on finished projects (generate + edit metadata, schedule, status). Verified live: assembled video → title "Why King Charles' 9/11 Tribute Left Everyone In Tears" + description + 12 tags. Real YouTube upload (5b) deferred — needs OAuth + unverified-app-private + ~6/day quota.
 
 ### 2026-07-13 (late night 2) — VOICEOVER
 - **v2 Phase 4 shipped** — ElevenLabs voiceover. `src/lib/tts.ts` (ElevenLabs flash v2.5, swappable); `Timeline.voiceover` flag (assembled = true); worker render voiceover branch: per scene → silent scaled footage looped to the narration + AI voice on top (`-stream_loop -1 … -shortest`), original-audio fallback on TTS error. `ELEVENLABS_API_KEY` in `app-v2` env (free tier ~10k chars/mo ≈ dozens of test videos). Verified live: assembled royal idea → worker logged `voiced 1/6 … 6/6` → 43.7s MP4 whose length is paced by the narration.
