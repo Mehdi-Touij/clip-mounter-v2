@@ -96,7 +96,7 @@ Also: **competitor revenue is not public** — the YouTube Data API gives views/
 - 🟡 **v2 Phase 2** — **Spy + Scene index** (the core engine):
   - ✅ **2a** — scene-index foundation: add competitor videos to a niche → ingest (transcript+download) → **keyword scene search** over transcript segments (exact timestamp + source). Done, live 2026-07-13.
   - ✅ **2b** — semantic (vector) scene search: local Transformers.js embeddings (all-MiniLM-L6-v2, 384-dim, WASM, cached on volume) → `scenes` table → cosine ranking. Done, live 2026-07-13.
-  - ⬜ **2c** — visual index: shot-detect (PySceneDetect) + self-hosted captions (Florence-2/Moondream/CLIP).
+  - ✅ **2c** — visual index: per-scene keyframe (ffmpeg) → local caption (Transformers.js vit-gpt2, WASM) → embedded as `spoken + [shows: caption]` so matching uses what's shown too. `reindexNiche` rebuilds. Done, live 2026-07-13. **Honest tradeoff:** CPU captioning is slow (~10s/keyframe) — a long video's backfill is ~10 min; fine as a background job, faster with a GPU or a cheap vision API if needed.
   - ✅ **2d** — competitor spy: YouTube Data API → resolve channels + pull uploads + stats → spy dashboard (metrics + top performers) → one-click "Index" into the scene library. Done, live 2026-07-13.
 - 🟡 **v2 Phase 3** — AI producer:
   - ✅ **3a+3b** — RSS news ingestion + producer ranks daily video ideas from news + competitor top performers (LLM). Done, live 2026-07-13.
@@ -151,6 +151,10 @@ curl -s <URL>/api/videos            # v1/v2 library
 ---
 
 ## 9. Build log (append newest at top)
+
+### 2026-07-13 (late night 4) — VISUAL INDEX + QUALITY
+- **Quality test** on the 11-video index revealed the honest gap: script/voice/SEO are production-quality, but **footage matching was loose** (abstract narration beats grabbed off-topic clips, incl. the off-niche Jobs test video). Cause: transcript-only matching + index pollution.
+- **v2 Phase 2c shipped** — visual scene index. `src/lib/vision.ts` (Transformers.js vit-gpt2 image captioning, WASM; blip repos were access-blocked); `scenes.visual_caption` (+migration); worker scene step extracts a keyframe per scene → captions it → embeds `spoken + [shows: caption]`. `reindexNiche` + `/api/niches/[id]/reindex`; video delete now clears scenes; `sharp` added. Cleaned the royal niche (removed Jobs video). Captioning confirmed working live (worker logs `(+visual)`, clean `✓ indexed`). Backfill is slow on CPU (background job).
 
 ### 2026-07-13 (late night 3) — PUBLISH PREP
 - **v2 Phase 5a shipped** — publish-prep. `projects.publish_json` (+migration); routes `/metadata` (AI SEO title+description+tags from the video's narration) and `/publish` (save edits/schedule/status); Publish panel on finished projects (generate + edit metadata, schedule, status). Verified live: assembled video → title "Why King Charles' 9/11 Tribute Left Everyone In Tears" + description + 12 tags. Real YouTube upload (5b) deferred — needs OAuth + unverified-app-private + ~6/day quota.
